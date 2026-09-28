@@ -1,0 +1,28 @@
+﻿name: Windows build and test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - preset: windows-debug
+            build: build-debug
+            directory: debug
+            configuration: Debug
+          - preset: windows-release
+            build: build-release
+            directory: release
+            configuration: Release
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+      - name: Build
+        run: cmake --build --preset ${{ matrix.build }} --parallel
+      - name: Test
+        run: ctest --test-dir build/${{ matrix.directory }} -C ${{ matrix.configuration }} --output-on-failure

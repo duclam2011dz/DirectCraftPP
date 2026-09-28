@@ -1,0 +1,13 @@
+build/
+out/
+.vs/
+.idea/
+.tools/cmake.zip
+*.user
+*.suo
+*.obj
+*.pdb
+*.ilk
+*.exe
+
+.tools/
