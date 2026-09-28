@@ -6,7 +6,7 @@ on:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2022
     strategy:
       matrix:
         include:
@@ -26,3 +26,4 @@ jobs:
         run: cmake --build --preset ${{ matrix.build }} --parallel
       - name: Test
         run: ctest --test-dir build/${{ matrix.directory }} -C ${{ matrix.configuration }} --output-on-failure
+
