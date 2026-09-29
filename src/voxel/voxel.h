@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <array>
 #include <cstdint>
@@ -54,6 +54,7 @@ struct RayHit {
     bool hit{false};
     Int3 block{};
     Int3 previous{};
+    Int3 normal{};
     float distance{};
 };
 
@@ -61,6 +62,3 @@ RayHit raycast(const Chunk& chunk, const std::array<float, 3>& origin,
                const std::array<float, 3>& direction, float maxDistance);
 
 } // namespace directcraft::voxel
-
-
-

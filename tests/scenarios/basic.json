@@ -1,13 +1,17 @@
 {
   "commands": [
-    { "op": "setCamera", "position": [8, 16, -24], "yaw": 0, "pitch": -0.25 },
+    { "op": "setCamera", "position": [7.5, 16, 4], "yaw": 0, "pitch": -0.5 },
+    { "op": "lockPointer" },
+    { "op": "startTrace", "name": "integration" },
     { "op": "keyDown", "key": "W" },
-    { "op": "waitFrames", "count": 2 },
+    { "op": "waitFrames", "count": 4 },
     { "op": "keyUp", "key": "W" },
-    { "op": "mouseMove", "dx": 4, "dy": -2 },
+    { "op": "mouseMove", "dx": 40, "dy": -10 },
+    { "op": "waitFrames", "count": 1 },
     { "op": "breakBlock" },
     { "op": "placeBlock", "block": "Grass" },
     { "op": "capture", "name": "integration" },
+    { "op": "stopTrace" },
     { "op": "getState" },
     { "op": "quit" }
   ]

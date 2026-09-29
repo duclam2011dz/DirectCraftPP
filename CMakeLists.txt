@@ -1,9 +1,9 @@
-﻿cmake_minimum_required(VERSION 3.25)
+cmake_minimum_required(VERSION 3.25)
 
-project(DirectCraft VERSION 1.0.1 LANGUAGES CXX)
+project(DirectCraft VERSION 1.0.2 LANGUAGES CXX)
 
 if(NOT WIN32)
-    message(FATAL_ERROR "DirectCraft++ v1.0.1 requires Windows and DirectX 12.")
+    message(FATAL_ERROR "DirectCraft++ v1.0.2 requires Windows and DirectX 12.")
 endif()
 
 include(CTest)
@@ -14,6 +14,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_library(directcraft_core
     src/voxel/voxel.cpp
+    src/gameplay/physics.cpp
+    src/gameplay/camera.cpp
 )
 target_include_directories(directcraft_core PUBLIC src)
 target_compile_definitions(directcraft_core PUBLIC NOMINMAX UNICODE _UNICODE)
@@ -44,9 +46,17 @@ if(BUILD_TESTING)
     target_link_libraries(DirectCraftUnitTests PRIVATE directcraft_core)
     target_compile_definitions(DirectCraftUnitTests PRIVATE NOMINMAX UNICODE _UNICODE)
     add_executable(DirectCraftMatrixTests tests/matrix_regression.cpp)
+    add_executable(DirectCraftPhysicsTests tests/physics_tests.cpp)
+    target_link_libraries(DirectCraftPhysicsTests PRIVATE directcraft_core)
+    target_compile_definitions(DirectCraftPhysicsTests PRIVATE NOMINMAX UNICODE _UNICODE)
+    add_executable(DirectCraftCameraTests tests/camera_input_tests.cpp)
+    target_link_libraries(DirectCraftCameraTests PRIVATE directcraft_core)
+    target_compile_definitions(DirectCraftCameraTests PRIVATE NOMINMAX UNICODE _UNICODE)
     target_compile_definitions(DirectCraftMatrixTests PRIVATE NOMINMAX UNICODE _UNICODE)
     add_test(NAME DirectCraft.UnitTests COMMAND DirectCraftUnitTests)
     add_test(NAME DirectCraft.MatrixRegression COMMAND DirectCraftMatrixTests)
+    add_test(NAME DirectCraft.Physics COMMAND DirectCraftPhysicsTests)
+    add_test(NAME DirectCraft.CameraInput COMMAND DirectCraftCameraTests)
 
     add_test(NAME DirectCraft.GpuSmoke
         COMMAND DirectCraft --render-test "${CMAKE_CURRENT_BINARY_DIR}/directcraft_smoke.bmp")
@@ -56,4 +66,3 @@ if(BUILD_TESTING)
     add_test(NAME DirectCraft.DebugIntegration COMMAND DirectCraftTool --launch "$<TARGET_FILE:DirectCraft>" --pipe-name DirectCraftPP.CTest --scenario "${CMAKE_CURRENT_SOURCE_DIR}/tests/scenarios/basic.json" --out "${CMAKE_CURRENT_BINARY_DIR}/debug_result.json")
     set_tests_properties(DirectCraft.DebugIntegration PROPERTIES TIMEOUT 30)
 endif()
-

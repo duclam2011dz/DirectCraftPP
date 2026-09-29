@@ -1,25 +1,27 @@
 # DirectCraft++
 
-DirectCraft++ is a small Windows-native voxel renderer and gameplay vertical slice. Version `1.0.1` uses C++17, Win32, DirectX 12, CMake and CTest.
+DirectCraft++ is a small Windows-native voxel renderer and gameplay vertical slice. Version `1.0.2` uses C++17, Win32, DirectX 12, CMake and CTest.
 
 ## Features
 
 - Win32 window and DirectX 12 renderer with depth buffering.
 - Deterministic procedural terrain generated from a fixed seed.
-- Exposed voxel mesh faces with simple directional and ambient lighting.
-- FPS controls: `WASD`, mouse look, `Space` to jump, left click to remove a block, right click to place one, and `Esc` to release or close the mouse capture.
+- Visible voxel mesh faces with directional and ambient lighting.
+- FPS controls: WASD, Raw Input mouse look, Space to jump, LMB to break, RMB to place, and ESC to release the pointer lock.
+- AABB player collision with gravity, acceleration, friction, ground and ceiling contacts.
 - WARP-backed render-test mode for a repeatable BMP smoke frame.
+- Optional Named Pipe JSONL automation, PNG capture, JSON metadata and per-frame JSONL traces.
 
 ## Requirements
 
 - Windows 10 1903+ or Windows 11, x64.
-- Visual Studio 2022 Build Tools or Visual Studio with Desktop C++ and Windows SDK 10.0.26100 (or newer).
+- Visual Studio 2022 Build Tools or Visual Studio with Desktop C++ workload.
+- Windows SDK with DirectX 12 headers/libraries.
 - CMake 3.25+ and Git.
-- A DirectX 12-capable GPU for the interactive hardware path. The automated smoke test uses WARP.
 
-DirectX 12 is supplied by the Windows SDK; it is not a separate package in this project.
+DirectX 12 is provided by the Windows SDK; no separate DirectX 12 package is required.
 
-## Build
+## Build and test
 
 From a Visual Studio Developer PowerShell:
 
@@ -31,15 +33,13 @@ ctest --test-dir build/debug -C Debug --output-on-failure
 
 For Release, use `windows-release`, `build-release`, and `build/release`.
 
-If CMake is provided by Visual Studio Build Tools, its executable is normally under `Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin`.
-
 ## Run
 
 ```powershell
 build/debug/Debug/DirectCraft.exe
 ```
 
-Click inside the window to capture the mouse. `Esc` releases the mouse; press it again to close the game. The current world is intentionally limited to one small chunk for v1.0.1.
+Click inside the window to lock the pointer at the client center. Raw mouse deltas drive yaw/pitch; `Esc` releases the lock, and clicking again reacquires it. WASD uses acceleration/friction, Space jumps, LMB breaks a ray-hit block and RMB places a block if it does not overlap the player AABB. The world is intentionally limited to one chunk for v1.0.2.
 
 The deterministic render test can be run directly:
 
@@ -49,7 +49,7 @@ build/debug/Debug/DirectCraft.exe --render-test build/debug/directcraft_smoke.bm
 
 ## Test layout
 
-`DirectCraftUnitTests` covers deterministic generation, block mutation, mesh creation and ray casting. `DirectCraft.GpuSmoke` initializes D3D12 through WARP, renders a fixed camera and writes a BMP frame.
+`DirectCraftUnitTests` covers deterministic generation, block mutation, mesh creation and ray casting. `DirectCraftMatrixTests` covers the CPU/HLSL projection convention. `DirectCraftPhysicsTests` covers spawn, gravity, ground and wall contacts. `DirectCraftCameraTests` covers raw mouse-to-yaw/pitch mapping and pitch clamping. GPU smoke/golden and Named Pipe integration tests run through CTest.
 
 ## Debugging and automation
 
@@ -59,7 +59,12 @@ Run with `--debug-tools` to enable the local Named Pipe endpoint, F3 diagnostics
 build/debug/Debug/DirectCraftTool.exe --launch build/debug/Debug/DirectCraft.exe --pipe-name DirectCraftPP.Manual --scenario tests/scenarios/basic.json --out build/debug/debug_result.json
 ```
 
-See [DEBUGGING.md](DEBUGGING.md) for the protocol, supported commands and metadata fields.
+Scenario commands include `lockPointer`, `unlockPointer`, `keyDown`, `keyUp`, raw-count `mouseMove`, mouse buttons, `waitFrames`, `setCamera`, `placeBlock`, `breakBlock`, `capture`, `startTrace`, `stopTrace`, `getState` and `quit`.
+
+`capture` writes `debug_captures/<name>.png` plus adjacent JSON metadata. `startTrace` writes `debug_captures/<name>.jsonl`; each line contains input, pointer-lock state, camera basis/orientation, player AABB/physics, raycast block/face/chunk coordinates, mesh and renderer diagnostics.
+
+See [DEBUGGING.md](DEBUGGING.md) for the protocol, trace workflow and optional RenderDoc/PIX capture guidance.
+
 ## License
 
 Source code and self-generated assets are released under the MIT License. See [LICENSE](LICENSE).

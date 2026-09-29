@@ -22,6 +22,9 @@ public:
     std::string featureLevel() const { return "11_0"; }
     bool pipelineReady() const { return pipelineState_ != nullptr && rootSignature_ != nullptr; }
     bool resourcesReady() const { return vertexBuffer_ != nullptr && indexBuffer_ != nullptr && depthBuffer_ != nullptr; }
+    bool gpuValidationEnabled() const { return gpuValidationEnabled_; }
+    bool dredEnabled() const { return dredEnabled_; }
+    HRESULT deviceRemovedReason() const { return device_ ? device_->GetDeviceRemovedReason() : E_FAIL; }
     UINT64 vertexBytes() const { return vertexBytes_; }
     UINT64 indexBytes() const { return indexBytes_; }
     void render(const DirectX::XMMATRIX& viewProjection, const std::filesystem::path& screenshotPath = {});
@@ -32,7 +35,7 @@ private:
     void writePng(const std::filesystem::path& path, const void* pixels, UINT rowPitch);
     static Microsoft::WRL::ComPtr<ID3DBlob> compileShader(const std::filesystem::path& path, const char* entry, const char* profile);
     static constexpr UINT FrameCount = 2;
-    int width_{}; int height_{}; bool renderTest_{}; bool wireframe_{}; bool usingWarp_{}; UINT frameIndex_{};
+    int width_{}; int height_{}; bool renderTest_{}; bool wireframe_{}; bool usingWarp_{}; bool gpuValidationEnabled_{}; bool dredEnabled_{}; UINT frameIndex_{};
     DXGI_ADAPTER_DESC1 adapterDescription_{}; UINT64 vertexBytes_{}; UINT64 indexBytes_{};
     Microsoft::WRL::ComPtr<IDXGIFactory6> factory_; Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter_; Microsoft::WRL::ComPtr<ID3D12Device> device_;
     Microsoft::WRL::ComPtr<ID3D12CommandQueue> commandQueue_; Microsoft::WRL::ComPtr<IDXGISwapChain3> swapchain_; Microsoft::WRL::ComPtr<ID3D12CommandAllocator> commandAllocator_; Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList_; Microsoft::WRL::ComPtr<ID3D12Fence> fence_;

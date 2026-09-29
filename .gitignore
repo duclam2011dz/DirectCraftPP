@@ -11,3 +11,5 @@ out/
 *.exe
 
 .tools/
+debug_captures/
+directcraft_error.log

@@ -110,11 +110,10 @@ RayHit raycast(const Chunk& chunk, const std::array<float, 3>& origin, const std
         const int x = static_cast<int>(std::floor(origin[0] + direction[0] * distance));
         const int y = static_cast<int>(std::floor(origin[1] + direction[1] * distance));
         const int z = static_cast<int>(std::floor(origin[2] + direction[2] * distance));
-        if (chunk.get(x, y, z) != BlockType::Air) return {true, {x, y, z}, result.previous, distance};
+        if (chunk.get(x, y, z) != BlockType::Air) return {true, {x, y, z}, result.previous, {result.previous.x - x, result.previous.y - y, result.previous.z - z}, distance};
         result.previous = {x, y, z};
     }
     return result;
 }
 
 } // namespace directcraft::voxel
-

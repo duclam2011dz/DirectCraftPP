@@ -32,8 +32,10 @@ void D3D12Renderer::createDevice(bool renderTest) {
     UINT flags = 0;
 #if defined(_DEBUG)
     ComPtr<ID3D12Debug> debug; if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debug)))) debug->EnableDebugLayer();
+    ComPtr<ID3D12Debug1> debug1; if (debug && SUCCEEDED(debug.As(&debug1))) { debug1->SetEnableGPUBasedValidation(TRUE); gpuValidationEnabled_ = true; }
     flags = DXGI_CREATE_FACTORY_DEBUG;
 #endif
+    ComPtr<ID3D12DeviceRemovedExtendedDataSettings> dred; if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&dred)))) { dred->SetAutoBreadcrumbsEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON); dred->SetPageFaultEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON); dredEnabled_ = true; }
     check(CreateDXGIFactory2(flags, IID_PPV_ARGS(&factory_)), "Could not create DXGI factory.");
     if (renderTest) {
         check(factory_->EnumWarpAdapter(IID_PPV_ARGS(&adapter_)), "Could not create WARP adapter.");

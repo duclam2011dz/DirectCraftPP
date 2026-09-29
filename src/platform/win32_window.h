@@ -14,11 +14,13 @@ public:
     bool mouseButtonDown(bool right) const;
     POINT consumeMouseDelta();
     void setMouseCaptured(bool captured);
+    void recenterPointer();
+    POINT cursorCenter() const { return cursorCenter_; }
     bool mouseCaptured() const { return mouseCaptured_; }
 private:
     static LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
     LRESULT handleMessage(UINT message, WPARAM wParam, LPARAM lParam);
     HINSTANCE instance_{}; HWND window_{}; bool keys_[256]{};
-    bool leftMouse_{false}; bool rightMouse_{false}; bool mouseCaptured_{false}; POINT mouseDelta_{};
+    bool leftMouse_{false}; bool rightMouse_{false}; bool mouseCaptured_{false}; POINT mouseDelta_{}; POINT cursorCenter_{};
 };
 } // namespace directcraft::platform
