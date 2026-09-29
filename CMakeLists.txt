@@ -1,9 +1,9 @@
 ﻿cmake_minimum_required(VERSION 3.25)
 
-project(DirectCraft VERSION 1.0.0 LANGUAGES CXX)
+project(DirectCraft VERSION 1.0.1 LANGUAGES CXX)
 
 if(NOT WIN32)
-    message(FATAL_ERROR "DirectCraft++ v1.0.0 requires Windows and DirectX 12.")
+    message(FATAL_ERROR "DirectCraft++ v1.0.1 requires Windows and DirectX 12.")
 endif()
 
 include(CTest)
@@ -22,8 +22,10 @@ add_executable(DirectCraft WIN32
     src/main.cpp
     src/platform/win32_window.cpp
     src/renderer/d3d12_renderer.cpp
+    src/debug/json.cpp
+    src/debug/debug_server.cpp
 )
-target_link_libraries(DirectCraft PRIVATE directcraft_core d3d12 dxgi dxguid d3dcompiler)
+target_link_libraries(DirectCraft PRIVATE directcraft_core d3d12 dxgi dxguid d3dcompiler windowscodecs)
 target_compile_definitions(DirectCraft PRIVATE NOMINMAX UNICODE _UNICODE DIRECTCRAFT_SHADER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/shaders")
 target_compile_options(DirectCraft PRIVATE /W4 /permissive-)
 
@@ -34,16 +36,24 @@ add_custom_command(TARGET DirectCraft POST_BUILD
 )
 
 if(BUILD_TESTING)
+    add_executable(DirectCraftTool tools/directcraft_tool.cpp src/debug/json.cpp)
+    target_include_directories(DirectCraftTool PRIVATE src)
+    target_compile_definitions(DirectCraftTool PRIVATE NOMINMAX UNICODE _UNICODE)
+
     add_executable(DirectCraftUnitTests tests/unit_tests.cpp)
     target_link_libraries(DirectCraftUnitTests PRIVATE directcraft_core)
     target_compile_definitions(DirectCraftUnitTests PRIVATE NOMINMAX UNICODE _UNICODE)
+    add_executable(DirectCraftMatrixTests tests/matrix_regression.cpp)
+    target_compile_definitions(DirectCraftMatrixTests PRIVATE NOMINMAX UNICODE _UNICODE)
     add_test(NAME DirectCraft.UnitTests COMMAND DirectCraftUnitTests)
+    add_test(NAME DirectCraft.MatrixRegression COMMAND DirectCraftMatrixTests)
 
     add_test(NAME DirectCraft.GpuSmoke
         COMMAND DirectCraft --render-test "${CMAKE_CURRENT_BINARY_DIR}/directcraft_smoke.bmp")
     set_tests_properties(DirectCraft.GpuSmoke PROPERTIES TIMEOUT 30)
     add_test(NAME DirectCraft.GpuGolden COMMAND ${CMAKE_COMMAND} -DGENERATED=${CMAKE_CURRENT_BINARY_DIR}/directcraft_smoke.bmp -DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/tests/golden/directcraft_smoke.bmp -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_bmp.cmake)
     set_tests_properties(DirectCraft.GpuGolden PROPERTIES DEPENDS DirectCraft.GpuSmoke TIMEOUT 5)
+    add_test(NAME DirectCraft.DebugIntegration COMMAND DirectCraftTool --launch "$<TARGET_FILE:DirectCraft>" --pipe-name DirectCraftPP.CTest --scenario "${CMAKE_CURRENT_SOURCE_DIR}/tests/scenarios/basic.json" --out "${CMAKE_CURRENT_BINARY_DIR}/debug_result.json")
+    set_tests_properties(DirectCraft.DebugIntegration PROPERTIES TIMEOUT 30)
 endif()
-
 

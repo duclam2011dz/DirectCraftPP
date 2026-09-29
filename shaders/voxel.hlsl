@@ -19,7 +19,7 @@ struct PixelInput {
 
 PixelInput VSMain(VertexInput input) {
     PixelInput output;
-    output.position = mul(viewProjection, float4(input.position, 1.0));
+    output.position = mul(float4(input.position, 1.0), viewProjection);
     output.normal = input.normal;
     output.color = input.color;
     return output;
@@ -31,4 +31,3 @@ float4 PSMain(PixelInput input) : SV_TARGET {
     float lighting = 0.32 + diffuse * 0.68;
     return float4(input.color.rgb * lighting, input.color.a);
 }
-

@@ -1,0 +1,14 @@
+{
+  "commands": [
+    { "op": "setCamera", "position": [8, 16, -24], "yaw": 0, "pitch": -0.25 },
+    { "op": "keyDown", "key": "W" },
+    { "op": "waitFrames", "count": 2 },
+    { "op": "keyUp", "key": "W" },
+    { "op": "mouseMove", "dx": 4, "dy": -2 },
+    { "op": "breakBlock" },
+    { "op": "placeBlock", "block": "Grass" },
+    { "op": "capture", "name": "integration" },
+    { "op": "getState" },
+    { "op": "quit" }
+  ]
+}
