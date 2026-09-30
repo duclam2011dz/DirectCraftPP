@@ -1,6 +1,6 @@
 # DirectCraft++
 
-DirectCraft++ is a small Windows-native voxel renderer and gameplay vertical slice. Version `1.0.2` uses C++17, Win32, DirectX 12, CMake and CTest.
+DirectCraft++ is a small Windows-native voxel renderer and gameplay vertical slice. Version `1.1.0` uses C++17, Win32, DirectX 12, CMake and CTest.
 
 ## Features
 
@@ -39,7 +39,7 @@ For Release, use `windows-release`, `build-release`, and `build/release`.
 build/debug/Debug/DirectCraft.exe
 ```
 
-Click inside the window to lock the pointer at the client center. Raw mouse deltas drive yaw/pitch; `Esc` releases the lock, and clicking again reacquires it. WASD uses acceleration/friction, Space jumps, LMB breaks a ray-hit block and RMB places a block if it does not overlap the player AABB. The world is intentionally limited to one chunk for v1.0.2.
+Click inside the window to lock the pointer at the client center. Raw mouse deltas drive yaw/pitch; `Esc` releases the lock, and clicking again reacquires it. WASD uses acceleration/friction, Space jumps, LMB breaks a ray-hit block and RMB places a block if it does not overlap the player AABB. The world streams deterministic chunks with nine resident chunks of load radius and a circular render radius of eight chunks.
 
 The deterministic render test can be run directly:
 
@@ -64,6 +64,16 @@ Scenario commands include `lockPointer`, `unlockPointer`, `keyDown`, `keyUp`, ra
 `capture` writes `debug_captures/<name>.png` plus adjacent JSON metadata. `startTrace` writes `debug_captures/<name>.jsonl`; each line contains input, pointer-lock state, camera basis/orientation, player AABB/physics, raycast block/face/chunk coordinates, mesh and renderer diagnostics.
 
 See [DEBUGGING.md](DEBUGGING.md) for the protocol, trace workflow and optional RenderDoc/PIX capture guidance.
+
+## Infinite world and benchmark
+
+Terrain uses an integer-only periodic stepped pattern, so equal seeds and world coordinates always produce equal blocks. Chunk edits are session-only. The binary-mask greedy mesher merges equal coplanar runs and reports the selected SSE2/AVX2 backend.
+
+Run a deterministic headless benchmark with JSON and CSV output:
+
+    build/debug/Debug/DirectCraft.exe --benchmark --seed 12345 --frames 600 --output performance/benchmark-v1.1.0.json
+
+See PERFORMANCE.md for version baselines and Visual Studio Profiler, WPA, PIX, RenderDoc and Tracy workflows.
 
 ## License
 

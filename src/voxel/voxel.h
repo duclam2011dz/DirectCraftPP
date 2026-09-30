@@ -2,6 +2,10 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
+#include <memory>
+#include <optional>
+#include <unordered_map>
 #include <vector>
 
 namespace directcraft::voxel {
@@ -20,6 +24,30 @@ struct Int3 {
     }
 };
 
+struct ChunkCoord {
+    int x{};
+    int z{};
+    friend bool operator==(const ChunkCoord& left, const ChunkCoord& right) { return left.x == right.x && left.z == right.z; }
+    friend bool operator!=(const ChunkCoord& left, const ChunkCoord& right) { return !(left == right); }
+};
+
+struct ChunkCoordHash {
+    std::size_t operator()(const ChunkCoord& value) const noexcept {
+        const auto x = static_cast<std::uint64_t>(static_cast<std::int64_t>(value.x));
+        const auto z = static_cast<std::uint64_t>(static_cast<std::int64_t>(value.z));
+        return static_cast<std::size_t>((x * 0x9e3779b97f4a7c15ull) ^ (z + 0x9e3779b97f4a7c15ull + (x << 6u) + (x >> 2u)));
+    }
+};
+
+struct Int3Hash {
+    std::size_t operator()(const Int3& value) const noexcept {
+        const auto x = static_cast<std::uint64_t>(static_cast<std::int64_t>(value.x));
+        const auto y = static_cast<std::uint64_t>(static_cast<std::int64_t>(value.y));
+        const auto z = static_cast<std::uint64_t>(static_cast<std::int64_t>(value.z));
+        return static_cast<std::size_t>((x * 73856093ull) ^ (y * 19349663ull) ^ (z * 83492791ull));
+    }
+};
+
 struct Vertex {
     float position[3];
     float normal[3];
@@ -34,12 +62,16 @@ struct Mesh {
 
 class Chunk {
 public:
-    explicit Chunk(std::int32_t seed = 1337);
+    explicit Chunk(std::int32_t seed = 1337, ChunkCoord coordinate = {});
 
     BlockType get(int x, int y, int z) const;
     void set(int x, int y, int z, BlockType block);
     void generate();
     Mesh buildMesh() const;
+    Mesh buildMesh(const std::function<BlockType(int, int, int)>& sample) const;
+    ChunkCoord coordinate() const { return coordinate_; }
+    int worldX() const { return coordinate_.x * ChunkSize; }
+    int worldZ() const { return coordinate_.z * ChunkSize; }
 
 private:
     static std::size_t index(int x, int y, int z);
@@ -47,6 +79,7 @@ private:
     int heightAt(int x, int z) const;
 
     std::int32_t seed_;
+    ChunkCoord coordinate_;
     std::array<BlockType, ChunkSize * ChunkHeight * ChunkSize> blocks_{};
 };
 
@@ -60,5 +93,51 @@ struct RayHit {
 
 RayHit raycast(const Chunk& chunk, const std::array<float, 3>& origin,
                const std::array<float, 3>& direction, float maxDistance);
+
+struct RenderStats {
+    std::size_t loadedChunks{};
+    std::size_t meshedChunks{};
+    std::size_t visibleChunks{};
+    std::size_t distanceCulledChunks{};
+    std::size_t frustumCulledChunks{};
+    std::size_t generatedChunks{};
+    std::size_t unloadedChunks{};
+};
+
+struct FrustumPlane { std::array<float, 4> equation{}; };
+struct Frustum { std::array<FrustumPlane, 6> planes{}; };
+
+Frustum makeFrustum(const std::array<float, 16>& rowMajorViewProjection);
+bool intersects(const Frustum& frustum, const std::array<float, 3>& minimum, const std::array<float, 3>& maximum);
+
+class World {
+public:
+    explicit World(std::int32_t seed = 1337, int loadRadius = 9, int renderRadius = 8);
+
+    void updateStreaming(float playerX, float playerZ);
+    BlockType get(int worldX, int worldY, int worldZ) const;
+    void set(int worldX, int worldY, int worldZ, BlockType block);
+    bool isResident(int worldX, int worldZ) const;
+    Mesh buildRenderMesh(float playerX, float playerZ, const std::optional<Frustum>& frustum = std::nullopt);
+    RayHit raycast(const std::array<float, 3>& origin, const std::array<float, 3>& direction, float maxDistance) const;
+    ChunkCoord chunkCoordFor(int worldX, int worldZ) const;
+    const RenderStats& stats() const { return stats_; }
+    std::size_t editedBlockCount() const { return edits_.size(); }
+    std::int32_t seed() const { return seed_; }
+    int loadRadius() const { return loadRadius_; }
+    int renderRadius() const { return renderRadius_; }
+
+private:
+    static int floorDiv(int value, int divisor);
+    Chunk* findChunk(ChunkCoord coordinate);
+    const Chunk* findChunk(ChunkCoord coordinate) const;
+
+    std::int32_t seed_;
+    int loadRadius_;
+    int renderRadius_;
+    std::unordered_map<ChunkCoord, std::unique_ptr<Chunk>, ChunkCoordHash> chunks_;
+    std::unordered_map<Int3, BlockType, Int3Hash> edits_;
+    RenderStats stats_{};
+};
 
 } // namespace directcraft::voxel

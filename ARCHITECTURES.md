@@ -23,4 +23,14 @@ The optional debug server receives one JSON transaction per Named Pipe line. The
 
 ## Deliberate v1.0.2 limits
 
-There is no persistence, networking, audio, inventory, texture atlas, multi-chunk streaming or mod API. The world has an open chunk boundary; outside the single generated chunk is Air, so the player may leave the chunk and fall.
+## v1.1.0 world pipeline
+
+World maps signed world coordinates to ChunkCoord, keeps a circular resident radius of nine chunks, and exposes an eight-chunk render radius. Generation is deterministic and uses a fixed integer stepped pattern. Edits are session-only and are remeshed in the affected chunk and neighboring visibility boundary.
+
+The chunk mesher builds per-face binary masks and greedily merges equal block runs. Face winding is validated against its normal while back-face culling remains enabled. The SIMD selector reports SSE2 or AVX2 on supported MSVC x64 systems, with a scalar fallback.
+
+Each frame applies distance culling, optional frustum AABB culling and face culling in that order. The current upload path keeps GPU resource ownership on the render thread; a bounded worker pool generates chunks while mesh assembly and GPU upload remain on the main thread.
+
+Ray interaction uses Amanatides-Woo DDA across resident chunks and returns world block, previous cell, face normal and hit distance. This removes the stepping error that made break/place unreliable at chunk boundaries.
+
+--benchmark runs the deterministic headless measurement path and exports JSON/CSV. External Visual Studio Profiler, WPA, PIX, RenderDoc and Tracy workflows are documented in PERFORMANCE.md; they are optional and no third-party binaries are committed.

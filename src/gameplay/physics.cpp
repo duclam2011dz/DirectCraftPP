@@ -15,7 +15,9 @@ bool overlapsBlock(const Aabb& box, int x, int y, int z) {
            box.minimum[2] < z + 1.0f && box.maximum[2] > z;
 }
 
-void moveAxis(PhysicsState& state, const PhysicsConfig& config, const voxel::Chunk& chunk,
+using SolidQuery = std::function<bool(int, int, int)>;
+
+void moveAxis(PhysicsState& state, const PhysicsConfig& config, const SolidQuery& solidAt,
               int axis, float amount) {
     state.position[axis] += amount;
     const Aabb box = playerAabb(state, config);
@@ -26,7 +28,7 @@ void moveAxis(PhysicsState& state, const PhysicsConfig& config, const voxel::Chu
     const int minZ = static_cast<int>(std::floor(box.minimum[2])) - 1;
     const int maxZ = static_cast<int>(std::floor(box.maximum[2])) + 1;
     for (int y = minY; y <= maxY; ++y) for (int z = minZ; z <= maxZ; ++z) for (int x = minX; x <= maxX; ++x) {
-        if (!solidAt(chunk, x, y, z) || !overlapsBlock(box, x, y, z)) continue;
+        if (!solidAt(x, y, z) || !overlapsBlock(box, x, y, z)) continue;
         if (axis == 0) state.position[0] = amount > 0.0f ? x - config.width * 0.5f : x + 1.0f + config.width * 0.5f;
         if (axis == 1) {
             if (amount < 0.0f) { state.position[1] = y + 1.0f; state.grounded = true; }
@@ -68,6 +70,7 @@ PhysicsState spawnAtCenter(const voxel::Chunk& chunk, const PhysicsConfig&) {
 
 void simulate(PhysicsState& state, const PhysicsConfig& config, const voxel::Chunk& chunk,
               const std::array<float, 3>& wishDirection, float deltaSeconds, bool jump) {
+    const SolidQuery solidAt = [&chunk](int x, int y, int z) { return chunk.get(x, y, z) != voxel::BlockType::Air; };
     const float dt = std::clamp(deltaSeconds, 0.0f, 0.05f);
     state.acceleration = {wishDirection[0] * config.acceleration, 0.0f, wishDirection[2] * config.acceleration};
     const float wishX = wishDirection[0] * config.maxSpeed;
@@ -82,8 +85,41 @@ void simulate(PhysicsState& state, const PhysicsConfig& config, const voxel::Chu
     if (state.grounded && jump) { state.velocity[1] = config.jumpVelocity; state.grounded = false; }
     state.velocity[1] -= config.gravity * dt;
     state.hitCeiling = false; state.hitWall = false; state.grounded = false;
-    moveAxis(state, config, chunk, 0, state.velocity[0] * dt);
-    moveAxis(state, config, chunk, 2, state.velocity[2] * dt);
-    moveAxis(state, config, chunk, 1, state.velocity[1] * dt);
+    moveAxis(state, config, solidAt, 0, state.velocity[0] * dt);
+    moveAxis(state, config, solidAt, 2, state.velocity[2] * dt);
+    moveAxis(state, config, solidAt, 1, state.velocity[1] * dt);
+}
+
+int surfaceHeight(const voxel::World& world, int x, int z) {
+    for (int y = voxel::ChunkHeight - 1; y >= 0; --y) if (world.get(x, y, z) != voxel::BlockType::Air) return y;
+    return 0;
+}
+
+PhysicsState spawnAtCenter(const voxel::World& world, const PhysicsConfig&) {
+    PhysicsState state;
+    state.position = {7.5f, static_cast<float>(surfaceHeight(world, 7, 7)) + 1.001f, 7.5f};
+    return state;
+}
+
+void simulate(PhysicsState& state, const PhysicsConfig& config, const voxel::World& world,
+              const std::array<float, 3>& wishDirection, float deltaSeconds, bool jump) {
+    const SolidQuery solidAt = [&world](int x, int y, int z) { return world.get(x, y, z) != voxel::BlockType::Air; };
+    const float dt = std::clamp(deltaSeconds, 0.0f, 0.05f);
+    state.acceleration = {wishDirection[0] * config.acceleration, 0.0f, wishDirection[2] * config.acceleration};
+    const float wishX = wishDirection[0] * config.maxSpeed;
+    const float wishZ = wishDirection[2] * config.maxSpeed;
+    if (std::abs(wishX) > 0.001f || std::abs(wishZ) > 0.001f) {
+        state.velocity[0] = approach(state.velocity[0], wishX, config.acceleration * dt);
+        state.velocity[2] = approach(state.velocity[2], wishZ, config.acceleration * dt);
+    } else {
+        state.velocity[0] = approach(state.velocity[0], 0.0f, config.friction * dt);
+        state.velocity[2] = approach(state.velocity[2], 0.0f, config.friction * dt);
+    }
+    if (state.grounded && jump) { state.velocity[1] = config.jumpVelocity; state.grounded = false; }
+    state.velocity[1] -= config.gravity * dt;
+    state.hitCeiling = false; state.hitWall = false; state.grounded = false;
+    moveAxis(state, config, solidAt, 0, state.velocity[0] * dt);
+    moveAxis(state, config, solidAt, 2, state.velocity[2] * dt);
+    moveAxis(state, config, solidAt, 1, state.velocity[1] * dt);
 }
 } // namespace directcraft::gameplay

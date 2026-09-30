@@ -1,6 +1,7 @@
 #include "platform/win32_window.h"
 #include "renderer/d3d12_renderer.h"
 #include "voxel/voxel.h"
+#include "voxel/simd.h"
 #include "gameplay/physics.h"
 #include "gameplay/camera.h"
 #include "debug/debug_server.h"
@@ -48,10 +49,13 @@ std::string safeName(std::string value) { for (char& character : value) if (!std
 class Game {
 public:
     Game(HINSTANCE instance, bool debugTools, bool renderTest, std::wstring pipeName)
-        : window_(instance, 1280, 720, !renderTest), chunk_(1337), renderer_(window_.handle(), 1280, 720, renderTest), debugTools_(debugTools), renderTest_(renderTest), pipeName_(std::move(pipeName)), physics_(directcraft::gameplay::spawnAtCenter(chunk_, physicsConfig_)) {}
+        : window_(instance, 1280, 720, !renderTest), world_(1337, 9, 8), renderer_(window_.handle(), 1280, 720, renderTest), debugTools_(debugTools), renderTest_(renderTest), pipeName_(std::move(pipeName)) {
+        world_.updateStreaming(7.5f, 7.5f);
+        physics_ = directcraft::gameplay::spawnAtCenter(world_, physicsConfig_);
+    }
 
     int run(const std::filesystem::path& renderTestPath) {
-        mesh_ = chunk_.buildMesh(); renderer_.setMesh(mesh_);
+        mesh_ = world_.buildRenderMesh(physics_.position[0], physics_.position[2]); renderer_.setMesh(mesh_); meshDirty_ = false;
         if (renderTest_) {
             const XMVECTOR eye = XMVectorSet(8.0f, 16.0f, -24.0f, 1.0f); const XMVECTOR target = XMVectorSet(8.0f, 8.0f, 8.0f, 1.0f);
             view_ = XMMatrixLookAtLH(eye, target, XMVectorSet(0, 1, 0, 0)); projection_ = XMMatrixPerspectiveFovLH(XM_PIDIV4, 1280.0f / 720.0f, 0.1f, 200.0f); viewProjection_ = view_ * projection_; renderer_.render(viewProjection_, renderTestPath); return 0;
@@ -60,7 +64,7 @@ public:
         auto previous = std::chrono::steady_clock::now();
         while (window_.pumpMessages() && running_) {
             const auto now = std::chrono::steady_clock::now(); const float delta = std::min(0.05f, std::chrono::duration<float>(now - previous).count()); previous = now; deltaSeconds_ = delta;
-            pollRequests(); processTransaction(); processInput(delta); updateMatrices(); writeTraceFrame();
+            pollRequests(); processTransaction(); processInput(delta); updateMatrices(); rebuildMeshIfNeeded(); writeTraceFrame();
             std::filesystem::path capturePath;
             if (captureName_) { capturePath = captureDirectory() / (*captureName_ + ".png"); std::filesystem::create_directories(capturePath.parent_path()); }
             renderer_.render(viewProjection_, capturePath);
@@ -110,31 +114,43 @@ private:
         const bool escape = window_.keyDown(VK_ESCAPE); if (escape && !escapeWasDown_) { if (window_.mouseCaptured()) window_.setMouseCaptured(false); else PostMessageW(window_.handle(), WM_CLOSE, 0, 0); } escapeWasDown_ = escape;
         const bool f3 = window_.keyDown(VK_F3); if (f3 && !f3WasDown_ && debugTools_) diagnostics_ = !diagnostics_; f3WasDown_ = f3; const bool f4 = window_.keyDown(VK_F4); if (f4 && !f4WasDown_ && debugTools_) renderer_.setWireframe(!renderer_.wireframe()); f4WasDown_ = f4; const bool f12 = window_.keyDown(VK_F12); if (f12 && !f12WasDown_ && debugTools_) captureName_ = "f12_" + std::to_string(frameId_); f12WasDown_ = f12;
         const auto key = [this](int code) { return window_.keyDown(code) || injectedKeys_[code]; }; XMVECTOR forward = directionFor(camera_.yaw, 0.0f); forward = XMVectorSetY(forward, 0); forward = XMVector3Normalize(forward); XMVECTOR right = XMVector3Normalize(XMVector3Cross(XMVectorSet(0, 1, 0, 0), forward)); XMVECTOR wish = XMVectorZero(); if (key('W')) wish += forward; if (key('S')) wish -= forward; if (key('D')) wish += right; if (key('A')) wish -= right; if (XMVectorGetX(XMVector3LengthSq(wish)) > 0.0f) wish = XMVector3Normalize(wish); XMFLOAT3 wishFloat{}; XMStoreFloat3(&wishFloat, wish);
-        directcraft::gameplay::simulate(physics_, physicsConfig_, chunk_, {wishFloat.x, 0.0f, wishFloat.z}, delta, key(VK_SPACE));
+        directcraft::gameplay::simulate(physics_, physicsConfig_, world_, {wishFloat.x, 0.0f, wishFloat.z}, delta, key(VK_SPACE));
+        world_.updateStreaming(physics_.position[0], physics_.position[2]);
+        if (world_.stats().generatedChunks > 0 || world_.stats().unloadedChunks > 0) meshDirty_ = true;
         const bool left = window_.mouseButtonDown(false) || injectedLeft_; const bool rightButton = window_.mouseButtonDown(true) || injectedRight_; if ((left && !leftWasDown_) || (rightButton && !rightWasDown_)) editBlock(rightButton && !rightWasDown_, BlockType::Grass); leftWasDown_ = left; rightWasDown_ = rightButton;
     }
 
     void editBlock(bool place, BlockType block) {
-        XMFLOAT3 eye{}; XMStoreFloat3(&eye, eyePosition()); XMFLOAT3 direction{}; XMStoreFloat3(&direction, directionFor(camera_.yaw, camera_.pitch)); const auto hit = directcraft::voxel::raycast(chunk_, {eye.x, eye.y, eye.z}, {direction.x, direction.y, direction.z}, 8.0f); if (!hit.hit) { events_.push_back(place ? "placeMiss" : "breakMiss"); return; }
-        const auto target = place ? hit.previous : hit.block; if (place && (target.x < 0 || target.x >= directcraft::voxel::ChunkSize || target.y < 0 || target.y >= directcraft::voxel::ChunkHeight || target.z < 0 || target.z >= directcraft::voxel::ChunkSize || chunk_.get(target.x, target.y, target.z) != BlockType::Air)) { events_.push_back("placeRejectedBounds"); return; }
+        XMFLOAT3 eye{}; XMStoreFloat3(&eye, eyePosition()); XMFLOAT3 direction{}; XMStoreFloat3(&direction, directionFor(camera_.yaw, camera_.pitch)); const auto hit = world_.raycast({eye.x, eye.y, eye.z}, {direction.x, direction.y, direction.z}, 8.0f); if (!hit.hit) { events_.push_back(place ? "placeMiss" : "breakMiss"); return; }
+        const auto target = place ? hit.previous : hit.block; if (place && (!world_.isResident(target.x, target.z) || target.y < 0 || target.y >= directcraft::voxel::ChunkHeight || world_.get(target.x, target.y, target.z) != BlockType::Air)) { events_.push_back("placeRejectedBounds"); return; }
         if (place) { directcraft::gameplay::PhysicsState candidate = physics_; candidate.position = physics_.position; const directcraft::gameplay::Aabb blockBox{{static_cast<float>(target.x), static_cast<float>(target.y), static_cast<float>(target.z)}, {target.x + 1.0f, target.y + 1.0f, target.z + 1.0f}}; if (directcraft::gameplay::overlaps(directcraft::gameplay::playerAabb(candidate, physicsConfig_), blockBox)) { events_.push_back("placeRejectedOverlap"); return; } }
-        chunk_.set(target.x, target.y, target.z, block); editedBlocks_.push_back(target); mesh_ = chunk_.buildMesh(); renderer_.setMesh(mesh_); events_.push_back(place ? "placeBlock" : "breakBlock"); if (events_.size() > 64) events_.erase(events_.begin(), events_.begin() + (events_.size() - 64));
+        world_.set(target.x, target.y, target.z, block); editedBlocks_.push_back(target); meshDirty_ = true; events_.push_back(place ? "placeBlock" : "breakBlock"); if (events_.size() > 64) events_.erase(events_.begin(), events_.begin() + (events_.size() - 64));
     }
 
     XMVECTOR eyePosition() const { return XMLoadFloat3(reinterpret_cast<const XMFLOAT3*>(physics_.position.data())) + XMVectorSet(0, EyeHeight, 0, 0); }
-    void updateMatrices() { const XMVECTOR eye = eyePosition(); view_ = XMMatrixLookToLH(eye, directionFor(camera_.yaw, camera_.pitch), XMVectorSet(0, 1, 0, 0)); projection_ = XMMatrixPerspectiveFovLH(XM_PIDIV4, 1280.0f / 720.0f, 0.1f, 200.0f); viewProjection_ = view_ * projection_; XMFLOAT3 direction{}; XMStoreFloat3(&direction, directionFor(camera_.yaw, camera_.pitch)); lastHit_ = directcraft::voxel::raycast(chunk_, {XMVectorGetX(eye), XMVectorGetY(eye), XMVectorGetZ(eye)}, {direction.x, direction.y, direction.z}, 8.0f); }
+    void updateMatrices() { const XMVECTOR eye = eyePosition(); view_ = XMMatrixLookToLH(eye, directionFor(camera_.yaw, camera_.pitch), XMVectorSet(0, 1, 0, 0)); projection_ = XMMatrixPerspectiveFovLH(XM_PIDIV4, 1280.0f / 720.0f, 0.1f, 200.0f); viewProjection_ = view_ * projection_; XMFLOAT3 direction{}; XMStoreFloat3(&direction, directionFor(camera_.yaw, camera_.pitch)); lastHit_ = world_.raycast({XMVectorGetX(eye), XMVectorGetY(eye), XMVectorGetZ(eye)}, {direction.x, direction.y, direction.z}, 8.0f); }
+    void rebuildMeshIfNeeded() {
+        if (!meshDirty_) return;
+        XMFLOAT4X4 matrix{};
+        XMStoreFloat4x4(&matrix, viewProjection_);
+        std::array<float, 16> values{};
+        std::copy(&matrix._11, &matrix._11 + 16, values.begin());
+        mesh_ = world_.buildRenderMesh(physics_.position[0], physics_.position[2], directcraft::voxel::makeFrustum(values));
+        renderer_.setMesh(mesh_);
+        meshDirty_ = false;
+    }
     Json meshBounds() const { if (mesh_.vertices.empty()) return Json::object(); float minimum[3] = {mesh_.vertices[0].position[0], mesh_.vertices[0].position[1], mesh_.vertices[0].position[2]}; float maximum[3] = {minimum[0], minimum[1], minimum[2]}; for (const auto& vertex : mesh_.vertices) for (int axis = 0; axis < 3; ++axis) { minimum[axis] = std::min(minimum[axis], vertex.position[axis]); maximum[axis] = std::max(maximum[axis], vertex.position[axis]); } Json result = Json::object(); result["min"] = numberArray(minimum, 3); result["max"] = numberArray(maximum, 3); return result; }
     Json aabbJson() const { const auto box = directcraft::gameplay::playerAabb(physics_, physicsConfig_); Json result = Json::object(); result["min"] = numberArray(box.minimum); result["max"] = numberArray(box.maximum); return result; }
     Json state() const {
         Json result = Json::object(); XMFLOAT3 eye{}, forward{}, right{}, up{}; XMStoreFloat3(&eye, eyePosition()); XMStoreFloat3(&forward, directionFor(camera_.yaw, camera_.pitch)); const XMVECTOR rightVector = XMVector3Normalize(XMVector3Cross(XMVectorSet(0, 1, 0, 0), XMLoadFloat3(&forward))); const XMVECTOR upVector = XMVector3Normalize(XMVector3Cross(XMLoadFloat3(&forward), rightVector)); XMStoreFloat3(&right, rightVector); XMStoreFloat3(&up, upVector);
-        result["application"]["version"] = "1.0.2"; result["application"]["debugTools"] = debugTools_; result["application"]["frameId"] = static_cast<int>(frameId_); result["application"]["viewport"] = Json::array(); result["application"]["viewport"].values() = {1280, 720};
+        result["application"]["version"] = "1.1.0"; result["application"]["debugTools"] = debugTools_; result["application"]["frameId"] = static_cast<int>(frameId_); result["application"]["viewport"] = Json::array(); result["application"]["viewport"].values() = {1280, 720};
         result["input"]["pointerLocked"] = window_.mouseCaptured(); result["input"]["cursorCenter"] = Json::array(); result["input"]["cursorCenter"].values().emplace_back(static_cast<int>(window_.cursorCenter().x)); result["input"]["cursorCenter"].values().emplace_back(static_cast<int>(window_.cursorCenter().y)); result["input"]["rawMouseDelta"] = numberArray(rawMouseDelta_); result["input"]["appliedMouseDelta"] = numberArray(appliedMouseDelta_); result["input"]["pressedKeys"] = Json::array(); for (int key = 0; key < 256; ++key) if (injectedKeys_[key] || window_.keyDown(key)) result["input"]["pressedKeys"].values().emplace_back(key); result["input"]["mouseButtons"] = Json::array(); if (injectedLeft_ || window_.mouseButtonDown(false)) result["input"]["mouseButtons"].values().emplace_back("left"); if (injectedRight_ || window_.mouseButtonDown(true)) result["input"]["mouseButtons"].values().emplace_back("right");
         result["player"]["position"] = numberArray(physics_.position); result["player"]["eyePosition"] = numberArray({eye.x, eye.y, eye.z}); result["player"]["velocity"] = numberArray(physics_.velocity); result["player"]["acceleration"] = numberArray(physics_.acceleration); result["player"]["grounded"] = physics_.grounded; result["player"]["hitCeiling"] = physics_.hitCeiling; result["player"]["hitWall"] = physics_.hitWall; result["player"]["aabb"] = aabbJson();
         result["camera"]["position"] = numberArray({eye.x, eye.y, eye.z}); result["camera"]["yaw"] = camera_.yaw; result["camera"]["pitch"] = camera_.pitch; result["camera"]["forward"] = numberArray({forward.x, forward.y, forward.z}); result["camera"]["right"] = numberArray({right.x, right.y, right.z}); result["camera"]["up"] = numberArray({up.x, up.y, up.z}); result["camera"]["view"] = matrixJson(view_); result["camera"]["projection"] = matrixJson(projection_); result["camera"]["viewProjection"] = matrixJson(viewProjection_); result["camera"]["fovRadians"] = XM_PIDIV4; result["camera"]["nearPlane"] = 0.1; result["camera"]["farPlane"] = 200.0;
-        result["world"]["seed"] = 1337; result["world"]["chunkOrigin"] = Json::array(); result["world"]["chunkOrigin"].values() = {0, 0, 0}; result["world"]["chunkSize"] = directcraft::voxel::ChunkSize; result["world"]["chunkHeight"] = directcraft::voxel::ChunkHeight; result["world"]["playerBlock"] = Json::array(); result["world"]["playerBlock"].values() = {static_cast<int>(std::floor(physics_.position[0])), static_cast<int>(std::floor(physics_.position[1])), static_cast<int>(std::floor(physics_.position[2]))}; result["world"]["editedBlocks"] = Json::array(); for (const auto& block : editedBlocks_) result["world"]["editedBlocks"].values().emplace_back(intArray(block));
+        const auto playerChunk = world_.chunkCoordFor(static_cast<int>(std::floor(physics_.position[0])), static_cast<int>(std::floor(physics_.position[2]))); result["world"]["seed"] = world_.seed(); result["world"]["chunkCoord"] = Json::array(); result["world"]["chunkCoord"].values() = {playerChunk.x, playerChunk.z}; result["world"]["chunkSize"] = directcraft::voxel::ChunkSize; result["world"]["chunkHeight"] = directcraft::voxel::ChunkHeight; result["world"]["loadRadius"] = world_.loadRadius(); result["world"]["renderRadius"] = world_.renderRadius(); result["world"]["playerBlock"] = Json::array(); result["world"]["playerBlock"].values() = {static_cast<int>(std::floor(physics_.position[0])), static_cast<int>(std::floor(physics_.position[1])), static_cast<int>(std::floor(physics_.position[2]))}; result["world"]["editedBlocks"] = Json::array(); for (const auto& block : editedBlocks_) result["world"]["editedBlocks"].values().emplace_back(intArray(block));
         result["raycast"]["origin"] = numberArray({eye.x, eye.y, eye.z}); result["raycast"]["direction"] = numberArray({forward.x, forward.y, forward.z}); result["raycast"]["hit"] = lastHit_.hit; result["raycast"]["block"] = intArray(lastHit_.block); result["raycast"]["previous"] = intArray(lastHit_.previous); result["raycast"]["normal"] = intArray(lastHit_.normal); result["raycast"]["distance"] = lastHit_.distance;
         result["physics"]["width"] = physicsConfig_.width; result["physics"]["height"] = physicsConfig_.height; result["physics"]["depth"] = physicsConfig_.depth; result["physics"]["maxSpeed"] = physicsConfig_.maxSpeed; result["physics"]["acceleration"] = physicsConfig_.acceleration; result["physics"]["friction"] = physicsConfig_.friction; result["physics"]["gravity"] = physicsConfig_.gravity; result["physics"]["jumpVelocity"] = physicsConfig_.jumpVelocity;
-        result["mesh"]["vertices"] = static_cast<int>(mesh_.vertices.size()); result["mesh"]["indices"] = static_cast<int>(mesh_.indices.size()); result["mesh"]["vertexBytes"] = static_cast<int>(renderer_.vertexBytes()); result["mesh"]["indexBytes"] = static_cast<int>(renderer_.indexBytes()); result["mesh"]["bounds"] = meshBounds();
+        result["mesh"]["vertices"] = static_cast<int>(mesh_.vertices.size()); result["mesh"]["indices"] = static_cast<int>(mesh_.indices.size()); result["mesh"]["vertexBytes"] = static_cast<int>(renderer_.vertexBytes()); result["mesh"]["indexBytes"] = static_cast<int>(renderer_.indexBytes()); result["mesh"]["bounds"] = meshBounds(); result["mesh"]["loadedChunks"] = static_cast<int>(world_.stats().loadedChunks); result["mesh"]["meshedChunks"] = static_cast<int>(world_.stats().meshedChunks); result["mesh"]["visibleChunks"] = static_cast<int>(world_.stats().visibleChunks); result["mesh"]["distanceCulledChunks"] = static_cast<int>(world_.stats().distanceCulledChunks); result["mesh"]["frustumCulledChunks"] = static_cast<int>(world_.stats().frustumCulledChunks);
         result["renderer"]["adapter"] = renderer_.adapterName(); result["renderer"]["usingWarp"] = renderer_.usingWarp(); result["renderer"]["featureLevel"] = renderer_.featureLevel(); result["renderer"]["pipelineReady"] = renderer_.pipelineReady(); result["renderer"]["resourcesReady"] = renderer_.resourcesReady(); result["renderer"]["wireframe"] = renderer_.wireframe(); result["renderer"]["geometryValid"] = geometryValid(); result["renderer"]["clipSpaceValid"] = clipSpaceValid(); result["renderer"]["deviceRemovedReason"] = static_cast<int>(renderer_.deviceRemovedReason()); result["renderer"]["gpuValidationEnabled"] = renderer_.gpuValidationEnabled(); result["renderer"]["dredEnabled"] = renderer_.dredEnabled();
         result["trace"]["active"] = traceOutput_.is_open(); result["trace"]["path"] = tracePath_.string(); result["timing"]["deltaSeconds"] = deltaSeconds_; result["events"] = Json::array(); for (const auto& event : events_) result["events"].values().emplace_back(event); return result;
     }
@@ -146,17 +162,89 @@ private:
     void stopTrace() { if (traceOutput_.is_open()) traceOutput_.close(); }
     void writeTraceFrame() { if (traceOutput_.is_open()) traceOutput_ << state().dump() << '\n'; }
     void finishTransactionIfReady() { if (!active_ || !active_->ready || captureName_) return; Json response = Json::object(); response["ok"] = active_->errors.empty(); response["frameId"] = static_cast<int>(frameId_); response["screenshots"] = Json::array(); for (const auto& screenshot : active_->screenshots) response["screenshots"].values().emplace_back(screenshot); response["traces"] = Json::array(); for (const auto& trace : active_->traces) response["traces"].values().emplace_back(trace); response["state"] = state(); response["errors"] = Json::array(); for (const auto& error : active_->errors) response["errors"].values().emplace_back(error); const bool shouldQuit = active_->quitRequested; active_->response->set_value(response.dump()); active_.reset(); if (shouldQuit) running_ = false; }
-    void updateOverlay() { if (!diagnostics_) { SetWindowTextW(window_.handle(), L"DirectCraft++ v1.0.2"); return; } const std::wstring title = L"DirectCraft++ v1.0.2 | F3 diagnostics | frame=" + std::to_wstring(frameId_) + L" pos=" + std::to_wstring(physics_.position[0]) + L"," + std::to_wstring(physics_.position[1]) + L"," + std::to_wstring(physics_.position[2]) + L" yaw=" + std::to_wstring(camera_.yaw) + L" pitch=" + std::to_wstring(camera_.pitch) + (physics_.grounded ? L" grounded" : L" airborne") + (lastHit_.hit ? L" hit" : L" no-hit") + (renderer_.wireframe() ? L" wireframe" : L""); SetWindowTextW(window_.handle(), title.c_str()); }
+    void updateOverlay() { if (!diagnostics_) { SetWindowTextW(window_.handle(), L"DirectCraft++ v1.1.0"); return; } const std::wstring title = L"DirectCraft++ v1.1.0 | F3 diagnostics | frame=" + std::to_wstring(frameId_) + L" chunks=" + std::to_wstring(world_.stats().visibleChunks) + L" pos=" + std::to_wstring(physics_.position[0]) + L"," + std::to_wstring(physics_.position[1]) + L"," + std::to_wstring(physics_.position[2]) + L" yaw=" + std::to_wstring(camera_.yaw) + L" pitch=" + std::to_wstring(camera_.pitch) + (physics_.grounded ? L" grounded" : L" airborne") + (lastHit_.hit ? L" hit" : L" no-hit") + (renderer_.wireframe() ? L" wireframe" : L""); SetWindowTextW(window_.handle(), title.c_str()); }
 
-    directcraft::platform::Win32Window window_; directcraft::voxel::Chunk chunk_; directcraft::voxel::Mesh mesh_; directcraft::renderer::D3D12Renderer renderer_; directcraft::gameplay::PhysicsConfig physicsConfig_; directcraft::gameplay::PhysicsState physics_; directcraft::gameplay::CameraState camera_;
+    directcraft::platform::Win32Window window_; directcraft::voxel::World world_; directcraft::voxel::Mesh mesh_; directcraft::renderer::D3D12Renderer renderer_; directcraft::gameplay::PhysicsConfig physicsConfig_; directcraft::gameplay::PhysicsState physics_; directcraft::gameplay::CameraState camera_;
     bool debugTools_{}; bool renderTest_{}; std::wstring pipeName_; std::unique_ptr<DebugServer> server_; std::vector<directcraft::debug::PendingRequest> queued_; std::optional<Transaction> active_;
     bool running_{true}; bool diagnostics_{}; bool escapeWasDown_{}; bool f3WasDown_{}; bool f4WasDown_{}; bool f12WasDown_{}; bool leftWasDown_{}; bool rightWasDown_{}; bool injectedLeft_{}; bool injectedRight_{}; std::array<bool, 256> injectedKeys_{}; std::array<float, 2> injectedMouseDelta_{}; std::array<float, 2> rawMouseDelta_{}; std::array<float, 2> appliedMouseDelta_{};
-    std::optional<std::string> captureName_; std::vector<std::string> events_; std::vector<directcraft::voxel::Int3> editedBlocks_; std::uint64_t frameId_{}; float deltaSeconds_{}; XMMATRIX view_{XMMatrixIdentity()}; XMMATRIX projection_{XMMatrixIdentity()}; XMMATRIX viewProjection_{XMMatrixIdentity()}; directcraft::voxel::RayHit lastHit_{}; std::ofstream traceOutput_; std::filesystem::path tracePath_;
+    std::optional<std::string> captureName_; std::vector<std::string> events_; std::vector<directcraft::voxel::Int3> editedBlocks_; std::uint64_t frameId_{}; float deltaSeconds_{}; bool meshDirty_{true}; XMMATRIX view_{XMMatrixIdentity()}; XMMATRIX projection_{XMMatrixIdentity()}; XMMATRIX viewProjection_{XMMatrixIdentity()}; directcraft::voxel::RayHit lastHit_{}; std::ofstream traceOutput_; std::filesystem::path tracePath_;
 };
+
+int runBenchmark(const std::filesystem::path& output, int seed, int frames) {
+    using Clock = std::chrono::high_resolution_clock;
+    directcraft::voxel::World world(seed, 9, 8);
+    directcraft::gameplay::PhysicsConfig physicsConfig;
+    world.updateStreaming(7.5f, 7.5f);
+    std::vector<double> frameMilliseconds;
+    frameMilliseconds.reserve(static_cast<std::size_t>(frames));
+    std::size_t totalVertices = 0;
+    std::size_t totalIndices = 0;
+    std::size_t meshSamples = 0;
+    std::size_t latestVertices = 0;
+    std::size_t latestIndices = 0;
+    double totalMilliseconds = 0.0;
+    float playerX = 7.5f;
+    float playerZ = 7.5f;
+    for (int frame = 0; frame < frames; ++frame) {
+        const auto start = Clock::now();
+        world.updateStreaming(playerX, playerZ);
+        directcraft::voxel::Mesh mesh;
+        if (frame == 0 || frame % 30 == 0) mesh = world.buildRenderMesh(playerX, playerZ);
+        const double milliseconds = std::chrono::duration<double, std::milli>(Clock::now() - start).count();
+        frameMilliseconds.push_back(milliseconds);
+        totalMilliseconds += milliseconds;
+        if (!mesh.vertices.empty()) {
+            totalVertices += mesh.vertices.size();
+            totalIndices += mesh.indices.size();
+            latestVertices = mesh.vertices.size();
+            latestIndices = mesh.indices.size();
+            ++meshSamples;
+        }
+        playerX += 0.015f;
+        playerZ += (frame % 120 == 0) ? 0.01f : 0.0f;
+    }
+    std::sort(frameMilliseconds.begin(), frameMilliseconds.end());
+    const auto percentile = [&frameMilliseconds](double fraction) {
+        if (frameMilliseconds.empty()) return 0.0;
+        const std::size_t index = std::min(frameMilliseconds.size() - 1, static_cast<std::size_t>(fraction * static_cast<double>(frameMilliseconds.size() - 1)));
+        return frameMilliseconds[index];
+    };
+    Json report = Json::object();
+    report["version"] = "1.1.0";
+    report["seed"] = seed;
+    report["frames"] = frames;
+    report["simdBackend"] = directcraft::voxel::simdBackendName();
+    report["world"]["chunkSize"] = directcraft::voxel::ChunkSize;
+    report["world"]["chunkHeight"] = directcraft::voxel::ChunkHeight;
+    report["world"]["loadRadius"] = world.loadRadius();
+    report["world"]["renderRadius"] = world.renderRadius();
+    report["metrics"]["frameTimeMs"]["p50"] = percentile(0.50);
+    report["metrics"]["frameTimeMs"]["p95"] = percentile(0.95);
+    report["metrics"]["frameTimeMs"]["p99"] = percentile(0.99);
+    report["metrics"]["frameTimeMs"]["max"] = frameMilliseconds.empty() ? 0.0 : frameMilliseconds.back();
+    report["metrics"]["frameTimeMs"]["average"] = frames > 0 ? totalMilliseconds / static_cast<double>(frames) : 0.0;
+    report["metrics"]["averageVertices"] = meshSamples > 0 ? static_cast<double>(totalVertices) / meshSamples : 0.0;
+    report["metrics"]["averageIndices"] = meshSamples > 0 ? static_cast<double>(totalIndices) / meshSamples : 0.0;
+    report["metrics"]["meshVertices"] = static_cast<int>(latestVertices);
+    report["metrics"]["meshIndices"] = static_cast<int>(latestIndices);
+    report["metrics"]["loadedChunks"] = static_cast<int>(world.stats().loadedChunks);
+    report["metrics"]["visibleChunks"] = static_cast<int>(world.stats().visibleChunks);
+    report["metrics"]["distanceCulledChunks"] = static_cast<int>(world.stats().distanceCulledChunks);
+    report["metrics"]["frustumCulledChunks"] = static_cast<int>(world.stats().frustumCulledChunks);
+    std::filesystem::create_directories(output.parent_path());
+    std::ofstream jsonOutput(output);
+    jsonOutput << report.dump() << std::endl;
+    auto csv = output;
+    csv.replace_extension(".csv");
+    std::ofstream csvOutput(csv);
+    csvOutput << "frame,frame_time_ms\n";
+    for (std::size_t index = 0; index < frameMilliseconds.size(); ++index) csvOutput << index << "," << frameMilliseconds[index] << std::endl;
+    return 0;
+}
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
     CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     try {
-        const std::wstring arguments = commandLine ? commandLine : L""; const bool renderTest = hasArgument(arguments, L"render-test"); const bool debugTools = hasArgument(arguments, L"debug-tools"); std::wstring pipeName = commandLineValue(arguments, L"pipe-name"); if (pipeName.empty()) pipeName = L"DirectCraftPP." + std::to_wstring(GetCurrentProcessId()); const std::wstring output = commandLineValue(arguments, L"render-test"); const std::filesystem::path screenshot = output.empty() ? L"directcraft_smoke.bmp" : std::filesystem::path(output); Game game(instance, debugTools, renderTest, pipeName); const int result = game.run(screenshot); CoUninitialize(); return result;
+        const std::wstring arguments = commandLine ? commandLine : L""; if (hasArgument(arguments, L"benchmark")) { const std::wstring output = commandLineValue(arguments, L"output"); const int seed = commandLineValue(arguments, L"seed").empty() ? 1337 : std::stoi(commandLineValue(arguments, L"seed")); const int frames = commandLineValue(arguments, L"frames").empty() ? 600 : std::max(1, std::stoi(commandLineValue(arguments, L"frames"))); const int result = runBenchmark(output.empty() ? std::filesystem::path(L"performance/benchmark-v1.1.0.json") : std::filesystem::path(output), seed, frames); CoUninitialize(); return result; } const bool renderTest = hasArgument(arguments, L"render-test"); const bool debugTools = hasArgument(arguments, L"debug-tools"); std::wstring pipeName = commandLineValue(arguments, L"pipe-name"); if (pipeName.empty()) pipeName = L"DirectCraftPP." + std::to_wstring(GetCurrentProcessId()); const std::wstring output = commandLineValue(arguments, L"render-test"); const std::filesystem::path screenshot = output.empty() ? L"directcraft_smoke.bmp" : std::filesystem::path(output); Game game(instance, debugTools, renderTest, pipeName); const int result = game.run(screenshot); CoUninitialize(); return result;
     } catch (const std::exception& error) { std::ofstream log("directcraft_error.log", std::ios::app); log << error.what() << '\n'; OutputDebugStringA(error.what()); OutputDebugStringA("\n"); MessageBoxA(nullptr, error.what(), "DirectCraft++ error", MB_ICONERROR | MB_OK); CoUninitialize(); return 1; }
 }

@@ -37,5 +37,9 @@ int surfaceHeight(const voxel::Chunk& chunk, int x, int z);
 PhysicsState spawnAtCenter(const voxel::Chunk& chunk, const PhysicsConfig& config);
 void simulate(PhysicsState& state, const PhysicsConfig& config, const voxel::Chunk& chunk,
               const std::array<float, 3>& wishDirection, float deltaSeconds, bool jump);
+int surfaceHeight(const voxel::World& world, int x, int z);
+PhysicsState spawnAtCenter(const voxel::World& world, const PhysicsConfig& config);
+void simulate(PhysicsState& state, const PhysicsConfig& config, const voxel::World& world,
+              const std::array<float, 3>& wishDirection, float deltaSeconds, bool jump);
 
 } // namespace directcraft::gameplay

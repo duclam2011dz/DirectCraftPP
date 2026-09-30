@@ -45,3 +45,12 @@ State and trace metadata include frame/timing, pointer lock and cursor center, r
 ## GPU tools
 
 RenderDoc can capture a D3D12 frame for pipeline, vertex/index and shader inspection; use its official [Quick Start](https://github.com/baldurk/renderdoc/blob/v1.x/docs/getting_started/quick_start.rst). PIX on Windows can capture Direct3D 12 API calls and timing data; see [PIX GPU Captures](https://devblogs.microsoft.com/pix/gpu-captures/) and [PIX Timing Captures](https://learn.microsoft.com/en-us/windows/win32/direct3dtools/pix/articles/timing-captures/pix-timing-captures).
+## World and performance diagnostics
+
+State snapshots now include the player ChunkCoord, load/render radii, loaded/visible/meshed chunk counts and distance/frustum culling counts. Raycast coordinates are world coordinates and use DDA, so the previous cell and hit normal can be inspected at chunk boundaries.
+
+For a headless reproducible run:
+
+    build/debug/Debug/DirectCraft.exe --benchmark --seed 12345 --frames 600 --output performance/benchmark-v1.1.0.json
+
+The adjacent CSV is suitable for plotting p50/p95/p99 frame time. Use Visual Studio Profiler for CPU samples, WPR/WPA for scheduling and ETW, PIX for D3D12 GPU/timing captures, RenderDoc for pipeline inspection and Tracy for optional live zones. See PERFORMANCE.md for the capture checklist.

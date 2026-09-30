@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(DirectCraft VERSION 1.0.2 LANGUAGES CXX)
+project(DirectCraft VERSION 1.1.0 LANGUAGES CXX)
 
 if(NOT WIN32)
-    message(FATAL_ERROR "DirectCraft++ v1.0.2 requires Windows and DirectX 12.")
+    message(FATAL_ERROR "DirectCraft++ v1.1.0 requires Windows and DirectX 12.")
 endif()
 
 include(CTest)
@@ -14,6 +14,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_library(directcraft_core
     src/voxel/voxel.cpp
+    src/voxel/simd.cpp
     src/gameplay/physics.cpp
     src/gameplay/camera.cpp
 )
@@ -63,6 +64,8 @@ if(BUILD_TESTING)
     set_tests_properties(DirectCraft.GpuSmoke PROPERTIES TIMEOUT 30)
     add_test(NAME DirectCraft.GpuGolden COMMAND ${CMAKE_COMMAND} -DGENERATED=${CMAKE_CURRENT_BINARY_DIR}/directcraft_smoke.bmp -DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/tests/golden/directcraft_smoke.bmp -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_bmp.cmake)
     set_tests_properties(DirectCraft.GpuGolden PROPERTIES DEPENDS DirectCraft.GpuSmoke TIMEOUT 5)
+    add_test(NAME DirectCraft.Benchmark COMMAND DirectCraft --benchmark --seed 12345 --frames 120 --output "${CMAKE_CURRENT_BINARY_DIR}/benchmark.json")
+    set_tests_properties(DirectCraft.Benchmark PROPERTIES TIMEOUT 30)
     add_test(NAME DirectCraft.DebugIntegration COMMAND DirectCraftTool --launch "$<TARGET_FILE:DirectCraft>" --pipe-name DirectCraftPP.CTest --scenario "${CMAKE_CURRENT_SOURCE_DIR}/tests/scenarios/basic.json" --out "${CMAKE_CURRENT_BINARY_DIR}/debug_result.json")
     set_tests_properties(DirectCraft.DebugIntegration PROPERTIES TIMEOUT 30)
 endif()

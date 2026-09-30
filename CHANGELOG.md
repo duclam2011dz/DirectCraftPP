@@ -2,6 +2,20 @@
 
 All notable changes to DirectCraft++ are documented here.
 
+## [1.1.0] - 2026-09-30
+
+### Added
+
+- Infinite session world with deterministic integer stepped terrain, signed chunk coordinates, load radius 9 and circular render radius 8.
+- Binary-mask greedy meshing, face winding validation, frustum culling, distance culling and runtime SIMD backend reporting.
+- Amanatides-Woo DDA raycast across resident chunks with world/chunk hit diagnostics.
+- Headless JSON/CSV benchmark mode and PERFORMANCE.md profiling workflow.
+
+### Fixed
+
+- Corrected all six block-face windings while retaining DirectX back-face culling, preventing missing or apparently transparent faces.
+- Block break/place now operates in world coordinates and remains reliable across chunk boundaries.
+
 ## [1.0.2] - 2026-09-29
 
 ### Fixed
