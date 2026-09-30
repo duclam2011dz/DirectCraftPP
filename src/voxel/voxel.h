@@ -102,6 +102,9 @@ struct RenderStats {
     std::size_t frustumCulledChunks{};
     std::size_t generatedChunks{};
     std::size_t unloadedChunks{};
+    double streamingMs{};
+    double generationMs{};
+    double meshingMs{};
 };
 
 struct FrustumPlane { std::array<float, 4> equation{}; };
@@ -136,6 +139,7 @@ private:
     int loadRadius_;
     int renderRadius_;
     std::unordered_map<ChunkCoord, std::unique_ptr<Chunk>, ChunkCoordHash> chunks_;
+    std::unordered_map<ChunkCoord, Mesh, ChunkCoordHash> meshCache_;
     std::unordered_map<Int3, BlockType, Int3Hash> edits_;
     RenderStats stats_{};
 };

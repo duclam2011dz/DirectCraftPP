@@ -36,6 +36,8 @@ int main() {
     world.set(17, 20, 0, BlockType::Stone);
     const auto crossChunkHit = world.raycast({15.5f, 20.5f, 0.5f}, {1.0f, 0.0f, 0.0f}, 8.0f);
     if (!crossChunkHit.hit || crossChunkHit.block.x != 17 || crossChunkHit.previous.x != 16 || crossChunkHit.normal.x != -1) return 8;
+    world.set(17, 20, 0, BlockType::Air);
+    if (world.get(17, 20, 0) != BlockType::Air) return 9;
     std::cout << "DirectCraft unit tests passed\n";
     return 0;
 }

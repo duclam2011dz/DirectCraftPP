@@ -1,6 +1,6 @@
 # DirectCraft++
 
-DirectCraft++ is a small Windows-native voxel renderer and gameplay vertical slice. Version `1.1.0` uses C++17, Win32, DirectX 12, CMake and CTest.
+DirectCraft++ is a small Windows-native voxel renderer and gameplay vertical slice. Version `1.1.1` uses C++17, Win32, DirectX 12, CMake and CTest.
 
 ## Features
 
@@ -71,7 +71,7 @@ Terrain uses an integer-only periodic stepped pattern, so equal seeds and world 
 
 Run a deterministic headless benchmark with JSON and CSV output:
 
-    build/debug/Debug/DirectCraft.exe --benchmark --seed 12345 --frames 600 --output performance/benchmark-v1.1.0.json
+    build/debug/Debug/DirectCraft.exe --benchmark --seed 12345 --frames 600 --output performance/benchmark-v1.1.1.json
 
 See PERFORMANCE.md for version baselines and Visual Studio Profiler, WPA, PIX, RenderDoc and Tracy workflows.
 

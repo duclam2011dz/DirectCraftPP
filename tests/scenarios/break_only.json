@@ -1,0 +1,9 @@
+{
+  "commands": [
+    { "op": "setCamera", "position": [7.5, 14, 4], "yaw": 0, "pitch": -0.8 },
+    { "op": "waitFrames", "count": 2 },
+    { "op": "breakBlock" },
+    { "op": "getState" },
+    { "op": "quit" }
+  ]
+}

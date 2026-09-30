@@ -2,6 +2,19 @@
 
 All notable changes to DirectCraft++ are documented here.
 
+## [1.1.1] - 2026-09-30
+
+### Fixed
+
+- LMB now always breaks the DDA hit block to Air; RMB remains the only physical input that places Grass.
+- Added a second guard in the edit path so a break operation cannot write a placement block accidentally.
+- Cached per-chunk greedy meshes and invalidate only edited/border-neighbor chunks, removing repeated whole-world remeshing hitches.
+
+### Diagnostics
+
+- Added per-frame streaming, generation, meshing, mesh-build and mesh-upload timings to state/trace JSON.
+- Added benchmark CPU process utilization and explicit GPU-utilization availability fields.
+
 ## [1.1.0] - 2026-09-30
 
 ### Added

@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <condition_variable>
+#include <chrono>
 #include <future>
 #include <limits>
 #include <mutex>
@@ -331,9 +332,17 @@ const Chunk* World::findChunk(ChunkCoord coordinate) const {
 }
 
 void World::updateStreaming(float playerX, float playerZ) {
+    const auto streamingStart = std::chrono::steady_clock::now();
     const ChunkCoord center = chunkCoordFor(static_cast<int>(std::floor(playerX)), static_cast<int>(std::floor(playerZ)));
     stats_.generatedChunks = 0;
     stats_.unloadedChunks = 0;
+    const auto invalidateBoundary = [this](ChunkCoord coordinate) {
+        meshCache_.erase(coordinate);
+        meshCache_.erase({coordinate.x - 1, coordinate.z});
+        meshCache_.erase({coordinate.x + 1, coordinate.z});
+        meshCache_.erase({coordinate.x, coordinate.z - 1});
+        meshCache_.erase({coordinate.x, coordinate.z + 1});
+    };
     std::vector<std::pair<ChunkCoord, std::future<std::unique_ptr<Chunk>>>> jobs;
     for (int z = center.z - loadRadius_; z <= center.z + loadRadius_; ++z) for (int x = center.x - loadRadius_; x <= center.x + loadRadius_; ++x) {
         const int dx = x - center.x;
@@ -346,17 +355,21 @@ void World::updateStreaming(float playerX, float playerZ) {
     }
     for (auto& job : jobs) {
         chunks_.emplace(job.first, job.second.get());
+        invalidateBoundary(job.first);
         ++stats_.generatedChunks;
     }
+    stats_.generationMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - streamingStart).count();
     for (auto iterator = chunks_.begin(); iterator != chunks_.end();) {
         const int dx = iterator->first.x - center.x;
         const int dz = iterator->first.z - center.z;
         if (dx * dx + dz * dz > loadRadius_ * loadRadius_) {
+            invalidateBoundary(iterator->first);
             iterator = chunks_.erase(iterator);
             ++stats_.unloadedChunks;
         } else ++iterator;
     }
     stats_.loadedChunks = chunks_.size();
+    stats_.streamingMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - streamingStart).count();
 }
 
 BlockType World::get(int worldX, int worldY, int worldZ) const {
@@ -381,11 +394,14 @@ void World::set(int worldX, int worldY, int worldZ, BlockType block) {
     const int localZ = worldZ - coordinate.z * ChunkSize;
     chunk->set(localX, worldY, localZ, block);
     edits_[{worldX, worldY, worldZ}] = block;
+    const ChunkCoord neighbors[] = {{coordinate.x, coordinate.z}, {coordinate.x - 1, coordinate.z}, {coordinate.x + 1, coordinate.z}, {coordinate.x, coordinate.z - 1}, {coordinate.x, coordinate.z + 1}};
+    for (const auto neighbor : neighbors) meshCache_.erase(neighbor);
 }
 
 bool World::isResident(int worldX, int worldZ) const { return findChunk(chunkCoordFor(worldX, worldZ)) != nullptr; }
 
 Mesh World::buildRenderMesh(float playerX, float playerZ, const std::optional<Frustum>& frustum) {
+    const auto meshingStart = std::chrono::steady_clock::now();
     Mesh result;
     stats_.meshedChunks = stats_.visibleChunks = stats_.distanceCulledChunks = stats_.frustumCulledChunks = 0;
     const ChunkCoord center = chunkCoordFor(static_cast<int>(std::floor(playerX)), static_cast<int>(std::floor(playerZ)));
@@ -399,10 +415,15 @@ Mesh World::buildRenderMesh(float playerX, float playerZ, const std::optional<Fr
         const std::array<float, 3> maximum = {minimum[0] + ChunkSize, static_cast<float>(ChunkHeight), minimum[2] + ChunkSize};
         if (frustum && !intersects(*frustum, minimum, maximum)) { ++stats_.frustumCulledChunks; continue; }
         ++stats_.visibleChunks;
-        appendMesh(result, entry.second->buildMesh(sample));
+        auto cached = meshCache_.find(coordinate);
+        if (cached == meshCache_.end()) {
+            cached = meshCache_.emplace(coordinate, entry.second->buildMesh(sample)).first;
+        }
+        appendMesh(result, cached->second);
         ++stats_.meshedChunks;
     }
     stats_.loadedChunks = chunks_.size();
+    stats_.meshingMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - meshingStart).count();
     return result;
 }
 

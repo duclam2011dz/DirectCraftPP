@@ -51,6 +51,6 @@ State snapshots now include the player ChunkCoord, load/render radii, loaded/vis
 
 For a headless reproducible run:
 
-    build/debug/Debug/DirectCraft.exe --benchmark --seed 12345 --frames 600 --output performance/benchmark-v1.1.0.json
+    build/debug/Debug/DirectCraft.exe --benchmark --seed 12345 --frames 600 --output performance/benchmark-v1.1.1.json
 
 The adjacent CSV is suitable for plotting p50/p95/p99 frame time. Use Visual Studio Profiler for CPU samples, WPR/WPA for scheduling and ETW, PIX for D3D12 GPU/timing captures, RenderDoc for pipeline inspection and Tracy for optional live zones. See PERFORMANCE.md for the capture checklist.
