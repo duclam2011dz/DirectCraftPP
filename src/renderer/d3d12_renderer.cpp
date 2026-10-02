@@ -7,6 +7,8 @@
 #include <fstream>
 #include <stdexcept>
 #include <vector>
+#include <array>
+#include <algorithm>
 
 using Microsoft::WRL::ComPtr;
 using namespace DirectX;
@@ -20,7 +22,7 @@ D3D12_RESOURCE_DESC& bufferDesc(UINT64 size) { static D3D12_RESOURCE_DESC desc{}
 }
 
 D3D12Renderer::D3D12Renderer(HWND window, int width, int height, bool renderTest) : width_(width), height_(height), renderTest_(renderTest) {
-    createDevice(renderTest); createSwapchain(window); createTargets(); createPipeline();
+    createDevice(renderTest); createSwapchain(window); createTargets(); createPipeline(); createQueries();
 }
 D3D12Renderer::~D3D12Renderer() {
     if (device_) waitForGpu();
@@ -100,8 +102,18 @@ void D3D12Renderer::createPipeline() {
     D3D12_INPUT_ELEMENT_DESC input[] = {{"POSITION",0,DXGI_FORMAT_R32G32B32_FLOAT,0,0,D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,0},{"NORMAL",0,DXGI_FORMAT_R32G32B32_FLOAT,0,12,D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,0},{"TEXCOORD",0,DXGI_FORMAT_R32G32_FLOAT,0,24,D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,0},{"COLOR",0,DXGI_FORMAT_R32G32B32A32_FLOAT,0,32,D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,0}};
     D3D12_RASTERIZER_DESC rasterizer{}; rasterizer.FillMode = wireframe_ ? D3D12_FILL_MODE_WIREFRAME : D3D12_FILL_MODE_SOLID; rasterizer.CullMode = D3D12_CULL_MODE_BACK; rasterizer.DepthClipEnable = TRUE; D3D12_BLEND_DESC blend{}; blend.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL; D3D12_DEPTH_STENCIL_DESC depth{}; depth.DepthEnable = TRUE; depth.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL; depth.DepthFunc = D3D12_COMPARISON_FUNC_LESS; D3D12_GRAPHICS_PIPELINE_STATE_DESC pipeline{}; pipeline.pRootSignature = rootSignature_.Get(); pipeline.VS = {vertexShader->GetBufferPointer(), vertexShader->GetBufferSize()}; pipeline.PS = {pixelShader->GetBufferPointer(), pixelShader->GetBufferSize()}; pipeline.InputLayout = {input, _countof(input)}; pipeline.RasterizerState = rasterizer; pipeline.BlendState = blend; pipeline.DepthStencilState = depth; pipeline.SampleMask = UINT_MAX; pipeline.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE; pipeline.NumRenderTargets = 1; pipeline.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM; pipeline.DSVFormat = DXGI_FORMAT_D32_FLOAT; pipeline.SampleDesc.Count = 1;
     check(device_->CreateGraphicsPipelineState(&pipeline, IID_PPV_ARGS(&pipelineState_)), "Could not create graphics pipeline.");
+    auto linePipeline = pipeline; linePipeline.RasterizerState.CullMode = D3D12_CULL_MODE_NONE; linePipeline.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID; linePipeline.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE; linePipeline.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO; linePipeline.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL; check(device_->CreateGraphicsPipelineState(&linePipeline, IID_PPV_ARGS(&outlinePipelineState_)), "Could not create outline pipeline.");
+    auto overlayPipeline = pipeline; overlayPipeline.RasterizerState.CullMode = D3D12_CULL_MODE_NONE; overlayPipeline.DepthStencilState.DepthEnable = FALSE; overlayPipeline.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO; overlayPipeline.BlendState.RenderTarget[0].BlendEnable = TRUE; overlayPipeline.BlendState.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA; overlayPipeline.BlendState.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA; overlayPipeline.BlendState.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD; overlayPipeline.BlendState.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE; overlayPipeline.BlendState.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA; overlayPipeline.BlendState.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD; check(device_->CreateGraphicsPipelineState(&overlayPipeline, IID_PPV_ARGS(&overlayPipelineState_)), "Could not create overlay pipeline.");
     const UINT64 constantSize = (sizeof(CameraConstants) + 255u) & ~255u; check(device_->CreateCommittedResource(&uploadHeap(), D3D12_HEAP_FLAG_NONE, &bufferDesc(constantSize), D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&constantBuffer_)), "Could not create constant buffer.");
     check(constantBuffer_->Map(0, nullptr, reinterpret_cast<void**>(&mappedConstants_)), "Could not map constant buffer.");
+}
+
+void D3D12Renderer::createQueries() {
+    D3D12_QUERY_HEAP_DESC description{}; description.Count = 2; description.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP;
+    if (FAILED(device_->CreateQueryHeap(&description, IID_PPV_ARGS(&timestampHeap_)))) return;
+    if (FAILED(commandQueue_->GetTimestampFrequency(&timestampFrequency_))) { timestampHeap_.Reset(); return; }
+    if (FAILED(device_->CreateCommittedResource(&readbackHeap(), D3D12_HEAP_FLAG_NONE, &bufferDesc(sizeof(UINT64) * 2), D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&timestampReadback_)))) { timestampHeap_.Reset(); return; }
+    gpuTimestampAvailable_ = timestampFrequency_ != 0;
 }
 
 void D3D12Renderer::uploadMesh(const voxel::Mesh& mesh) {
@@ -113,6 +125,28 @@ void D3D12Renderer::uploadMesh(const voxel::Mesh& mesh) {
     vertexView_ = {vertexBuffer_->GetGPUVirtualAddress(), static_cast<UINT>(vertexBytes), sizeof(voxel::Vertex)}; indexView_ = {indexBuffer_->GetGPUVirtualAddress(), static_cast<UINT>(indexBytes), DXGI_FORMAT_R32_UINT}; indexCount_ = static_cast<UINT>(mesh.indices.size());
 }
 void D3D12Renderer::setMesh(const voxel::Mesh& mesh) { waitForGpu(); uploadMesh(mesh); }
+void D3D12Renderer::uploadOutline(const std::vector<voxel::Vertex>& vertices) {
+    outlineVertexCount_ = static_cast<UINT>(vertices.size()); outlineBuffer_.Reset(); if (vertices.empty()) return;
+    const UINT64 bytes = vertices.size() * sizeof(voxel::Vertex); check(device_->CreateCommittedResource(&uploadHeap(), D3D12_HEAP_FLAG_NONE, &bufferDesc(bytes), D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&outlineBuffer_)), "Could not create outline buffer."); void* mapped = nullptr; check(outlineBuffer_->Map(0, nullptr, &mapped), "Could not map outline buffer."); memcpy(mapped, vertices.data(), bytes); outlineBuffer_->Unmap(0, nullptr); outlineView_ = {outlineBuffer_->GetGPUVirtualAddress(), static_cast<UINT>(bytes), sizeof(voxel::Vertex)};
+}
+void D3D12Renderer::setSelectionOutline(const voxel::Int3* block) {
+    if (!block) { outlineVertexCount_ = 0; outlineBuffer_.Reset(); return; }
+    const float x = static_cast<float>(block->x) - 0.002f, y = static_cast<float>(block->y) - 0.002f, z = static_cast<float>(block->z) - 0.002f, s = 1.004f;
+    const std::array<std::array<float, 3>, 8> p = {{{x,y,z},{x+s,y,z},{x+s,y+s,z},{x,y+s,z},{x,y,z+s},{x+s,y,z+s},{x+s,y+s,z+s},{x,y+s,z+s}}};
+    const std::array<std::array<int, 2>, 12> edges = {{{0,1},{1,2},{2,3},{3,0},{4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7}}};
+    std::vector<voxel::Vertex> vertices; vertices.reserve(24); for (const auto& edge : edges) for (int index : edge) { voxel::Vertex v{}; v.position[0]=p[index][0]; v.position[1]=p[index][1]; v.position[2]=p[index][2]; v.uv[0]=0; v.color[3] = -1.0f; vertices.push_back(v); } uploadOutline(vertices);
+}
+void D3D12Renderer::uploadOverlay(const std::vector<voxel::Vertex>& vertices) {
+    overlayVertexCount_ = static_cast<UINT>(vertices.size()); overlayBuffer_.Reset(); if (vertices.empty()) return; const UINT64 bytes = vertices.size() * sizeof(voxel::Vertex); check(device_->CreateCommittedResource(&uploadHeap(), D3D12_HEAP_FLAG_NONE, &bufferDesc(bytes), D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&overlayBuffer_)), "Could not create overlay buffer."); void* mapped = nullptr; check(overlayBuffer_->Map(0, nullptr, &mapped), "Could not map overlay buffer."); memcpy(mapped, vertices.data(), bytes); overlayBuffer_->Unmap(0, nullptr); overlayView_ = {overlayBuffer_->GetGPUVirtualAddress(), static_cast<UINT>(bytes), sizeof(voxel::Vertex)};
+}
+void D3D12Renderer::setDevToolsOverlay(bool enabled, const std::vector<std::string>& lines) {
+    if (!enabled) { overlayVertexCount_ = 0; overlayBuffer_.Reset(); return; }
+    std::vector<voxel::Vertex> vertices; const float left=-0.98f, top=0.94f, charW=0.010f, charH=0.018f;
+    auto quad = [&vertices](float x0,float y0,float x1,float y1,float r,float g,float b,float a) { const std::array<std::array<float,2>,6> points = {{{x0,y0},{x1,y0},{x1,y1},{x0,y0},{x1,y1},{x0,y1}}}; for (const auto& p : points) { voxel::Vertex v{}; v.position[0]=p[0]; v.position[1]=p[1]; v.position[2]=0; v.color[0]=r; v.color[1]=g; v.color[2]=b; v.color[3]=a; v.uv[0]=-1; vertices.push_back(v); } };
+    quad(left, top-std::min(0.72f, 0.035f*static_cast<float>(lines.size()+1)), 0.02f, top+0.025f, 0.01f,0.02f,0.04f,0.82f);
+    for (std::size_t row=0; row<lines.size(); ++row) { const auto& line=lines[row]; for (std::size_t col=0; col<line.size() && col<90; ++col) if (line[col] != ' ') { const float x=left+0.012f+static_cast<float>(col)*charW, y=top-0.012f-static_cast<float>(row)*0.035f; const unsigned code=static_cast<unsigned char>(line[col]); const float shade=0.55f+static_cast<float>(code%4)*0.1f; quad(x,y-charH,x+charW*0.65f,y,shade,shade,0.95f,1.0f); } }
+    uploadOverlay(vertices);
+}
 void D3D12Renderer::setWireframe(bool enabled) { if (wireframe_ == enabled) return; waitForGpu(); if (mappedConstants_) { constantBuffer_->Unmap(0, nullptr); mappedConstants_ = nullptr; } wireframe_ = enabled; createPipeline(); }
 std::string D3D12Renderer::adapterName() const { char result[256]{}; WideCharToMultiByte(CP_UTF8, 0, adapterDescription_.Description, -1, result, sizeof(result), nullptr, nullptr); return result; }
 
@@ -121,11 +155,17 @@ void D3D12Renderer::render(const XMMATRIX& viewProjection, const std::filesystem
     const XMMATRIX transposed = XMMatrixTranspose(viewProjection); XMStoreFloat4x4(&mappedConstants_->viewProjection, transposed);
     auto rtv = rtvHeap_->GetCPUDescriptorHandleForHeapStart(); rtv.ptr += static_cast<SIZE_T>(frameIndex_) * rtvDescriptorSize_;
     D3D12_RESOURCE_BARRIER barrier{}; barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION; barrier.Transition.pResource = renderTargets_[frameIndex_].Get(); barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT; barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET; barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES; commandList_->ResourceBarrier(1, &barrier);
-    auto dsvHandle = dsvHeap_->GetCPUDescriptorHandleForHeapStart(); commandList_->OMSetRenderTargets(1, &rtv, FALSE, &dsvHandle); const float clear[] = {0.08f, 0.12f, 0.2f, 1.0f}; commandList_->ClearRenderTargetView(rtv, clear, 0, nullptr); commandList_->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
-    D3D12_VIEWPORT viewport{0, 0, static_cast<float>(width_), static_cast<float>(height_), 0, 1}; D3D12_RECT scissor{0, 0, width_, height_}; commandList_->RSSetViewports(1, &viewport); commandList_->RSSetScissorRects(1, &scissor); commandList_->SetGraphicsRootSignature(rootSignature_.Get()); commandList_->SetGraphicsRootConstantBufferView(0, constantBuffer_->GetGPUVirtualAddress()); commandList_->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST); commandList_->IASetVertexBuffers(0, 1, &vertexView_); commandList_->IASetIndexBuffer(&indexView_); commandList_->DrawIndexedInstanced(indexCount_, 1, 0, 0, 0);
+    if (gpuTimestampAvailable_) commandList_->EndQuery(timestampHeap_.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0);
+    const char frameEvent[] = "DirectCraft Frame"; commandList_->BeginEvent(0, frameEvent, static_cast<UINT>(sizeof(frameEvent) - 1));
+    auto dsvHandle = dsvHeap_->GetCPUDescriptorHandleForHeapStart(); commandList_->OMSetRenderTargets(1, &rtv, FALSE, &dsvHandle); const float clear[] = {0.35f, 0.65f, 0.95f, 1.0f}; commandList_->ClearRenderTargetView(rtv, clear, 0, nullptr); commandList_->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+    D3D12_VIEWPORT viewport{0, 0, static_cast<float>(width_), static_cast<float>(height_), 0, 1}; D3D12_RECT scissor{0, 0, width_, height_}; commandList_->RSSetViewports(1, &viewport); commandList_->RSSetScissorRects(1, &scissor); commandList_->SetGraphicsRootSignature(rootSignature_.Get()); commandList_->SetPipelineState(pipelineState_.Get()); commandList_->SetGraphicsRootConstantBufferView(0, constantBuffer_->GetGPUVirtualAddress()); commandList_->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST); commandList_->IASetVertexBuffers(0, 1, &vertexView_); commandList_->IASetIndexBuffer(&indexView_); const char sceneEvent[] = "Scene"; commandList_->BeginEvent(0, sceneEvent, static_cast<UINT>(sizeof(sceneEvent)-1)); commandList_->DrawIndexedInstanced(indexCount_, 1, 0, 0, 0); commandList_->EndEvent();
+    if (outlineVertexCount_) { const char outlineEvent[] = "Selection Outline"; commandList_->BeginEvent(0, outlineEvent, static_cast<UINT>(sizeof(outlineEvent)-1)); commandList_->SetPipelineState(outlinePipelineState_.Get()); commandList_->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_LINELIST); commandList_->IASetVertexBuffers(0, 1, &outlineView_); commandList_->DrawInstanced(outlineVertexCount_, 1, 0, 0); commandList_->EndEvent(); }
+    if (overlayVertexCount_) { const char overlayEvent[] = "DevTools Overlay"; commandList_->BeginEvent(0, overlayEvent, static_cast<UINT>(sizeof(overlayEvent)-1)); XMStoreFloat4x4(&mappedConstants_->viewProjection, XMMatrixIdentity()); commandList_->SetPipelineState(overlayPipelineState_.Get()); commandList_->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST); commandList_->IASetVertexBuffers(0, 1, &overlayView_); commandList_->DrawInstanced(overlayVertexCount_, 1, 0, 0); commandList_->EndEvent(); }
+    commandList_->EndEvent();
+    if (gpuTimestampAvailable_) { commandList_->EndQuery(timestampHeap_.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 1); commandList_->ResolveQueryData(timestampHeap_.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0, 2, timestampReadback_.Get(), 0); }
     barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET; barrier.Transition.StateAfter = !screenshotPath.empty() ? D3D12_RESOURCE_STATE_COPY_SOURCE : D3D12_RESOURCE_STATE_PRESENT; commandList_->ResourceBarrier(1, &barrier);
     if (!screenshotPath.empty()) { captureBackBuffer(screenshotPath); return; }
-    check(commandList_->Close(), "Could not close command list."); ID3D12CommandList* lists[] = {commandList_.Get()}; commandQueue_->ExecuteCommandLists(1, lists); check(swapchain_->Present(1, 0), "Could not present frame."); frameIndex_ = swapchain_->GetCurrentBackBufferIndex(); waitForGpu();
+    check(commandList_->Close(), "Could not close command list."); ID3D12CommandList* lists[] = {commandList_.Get()}; commandQueue_->ExecuteCommandLists(1, lists); check(swapchain_->Present(1, 0), "Could not present frame."); frameIndex_ = swapchain_->GetCurrentBackBufferIndex(); waitForGpu(); if (gpuTimestampAvailable_) { UINT64* values=nullptr; D3D12_RANGE range{0,sizeof(UINT64)*2}; if (SUCCEEDED(timestampReadback_->Map(0,&range,reinterpret_cast<void**>(&values))) && values[1]>=values[0]) { gpuFrameMs_=1000.0*static_cast<double>(values[1]-values[0])/static_cast<double>(timestampFrequency_); timestampReadback_->Unmap(0,nullptr); } }
 }
 
 void D3D12Renderer::captureBackBuffer(const std::filesystem::path& path) {

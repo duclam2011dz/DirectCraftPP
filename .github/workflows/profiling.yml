@@ -1,0 +1,14 @@
+name: Windows profiling tool check
+on:
+  workflow_dispatch:
+jobs:
+  tool-check:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect profiling tools
+        shell: pwsh
+        run: |
+          Get-Command wpr,wpa,pix -ErrorAction SilentlyContinue | Select-Object Name,Source
+          if (-not (Get-Command wpr -ErrorAction SilentlyContinue)) { throw "WPR is required on the Windows runner" }
+          Write-Output "PIX/WPA are optional and are not installed by the build workflow."

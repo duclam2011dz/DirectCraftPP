@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(DirectCraft VERSION 1.1.1 LANGUAGES CXX)
+project(DirectCraft VERSION 1.1.2 LANGUAGES CXX)
 
 if(NOT WIN32)
-    message(FATAL_ERROR "DirectCraft++ v1.1.1 requires Windows and DirectX 12.")
+    message(FATAL_ERROR "DirectCraft++ v1.1.2 requires Windows and DirectX 12.")
 endif()
 
 include(CTest)
@@ -68,6 +68,8 @@ if(BUILD_TESTING)
     set_tests_properties(DirectCraft.Benchmark PROPERTIES TIMEOUT 30)
     add_test(NAME DirectCraft.DebugIntegration COMMAND DirectCraftTool --launch "$<TARGET_FILE:DirectCraft>" --pipe-name DirectCraftPP.CTest --scenario "${CMAKE_CURRENT_SOURCE_DIR}/tests/scenarios/basic.json" --out "${CMAKE_CURRENT_BINARY_DIR}/debug_result.json")
     set_tests_properties(DirectCraft.DebugIntegration PROPERTIES TIMEOUT 30)
+    add_test(NAME DirectCraft.DebugSchema COMMAND ${CMAKE_COMMAND} -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/debug_result.json -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_debug_schema.cmake)
+    set_tests_properties(DirectCraft.DebugSchema PROPERTIES DEPENDS DirectCraft.DebugIntegration TIMEOUT 5)
     add_test(NAME DirectCraft.BreakRegression COMMAND DirectCraftTool --launch "$<TARGET_FILE:DirectCraft>" --pipe-name DirectCraftPP.BreakRegression --scenario "${CMAKE_CURRENT_SOURCE_DIR}/tests/scenarios/break_only.json" --out "${CMAKE_CURRENT_BINARY_DIR}/break_regression.json")
     set_tests_properties(DirectCraft.BreakRegression PROPERTIES TIMEOUT 30)
 endif()

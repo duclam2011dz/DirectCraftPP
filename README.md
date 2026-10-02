@@ -1,6 +1,6 @@
 # DirectCraft++
 
-DirectCraft++ is a small Windows-native voxel renderer and gameplay vertical slice. Version `1.1.1` uses C++17, Win32, DirectX 12, CMake and CTest.
+DirectCraft++ is a small Windows-native voxel renderer and gameplay vertical slice. Version `1.1.2` uses C++17, Win32, DirectX 12, CMake and CTest.
 
 ## Features
 
@@ -63,7 +63,7 @@ Scenario commands include `lockPointer`, `unlockPointer`, `keyDown`, `keyUp`, ra
 
 `capture` writes `debug_captures/<name>.png` plus adjacent JSON metadata. `startTrace` writes `debug_captures/<name>.jsonl`; each line contains input, pointer-lock state, camera basis/orientation, player AABB/physics, raycast block/face/chunk coordinates, mesh and renderer diagnostics.
 
-See [DEBUGGING.md](DEBUGGING.md) for the protocol, trace workflow and optional RenderDoc/PIX capture guidance.
+When launched with `--debug-tools`, F3 opens the native D3D12 DevTools overlay, including frame timings, GPU timestamp status, chunks, player/camera and raycast selection. The selected block receives a black outline and is the only block eligible for LMB break/RMB place. See [DEBUGGING.md](DEBUGGING.md) for the protocol, trace workflow and optional RenderDoc/PIX capture guidance.
 
 ## Infinite world and benchmark
 
@@ -71,7 +71,7 @@ Terrain uses an integer-only periodic stepped pattern, so equal seeds and world 
 
 Run a deterministic headless benchmark with JSON and CSV output:
 
-    build/debug/Debug/DirectCraft.exe --benchmark --seed 12345 --frames 600 --output performance/benchmark-v1.1.1.json
+    build/debug/Debug/DirectCraft.exe --benchmark --seed 12345 --frames 600 --output performance/benchmark-v1.1.2.json
 
 See PERFORMANCE.md for version baselines and Visual Studio Profiler, WPA, PIX, RenderDoc and Tracy workflows.
 

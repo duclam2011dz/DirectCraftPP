@@ -27,13 +27,13 @@ Supported operations include `lockPointer`, `unlockPointer`, `keyDown`, `keyUp`,
 
 ## Captures, state and traces
 
-- `F3` toggles diagnostics in the game title bar.
+- `F3` toggles the native D3D12 DevTools overlay when launched with `--debug-tools`.
 - `F4` toggles wireframe rendering.
 - `F12` writes a PNG capture and JSON metadata while debug tools are enabled.
 - Scenario `capture` writes `debug_captures/<name>.png` and the adjacent `.json` state file.
 - `startTrace` writes one state snapshot per rendered frame to `debug_captures/<name>.jsonl` until `stopTrace`.
 
-State and trace metadata include frame/timing, pointer lock and cursor center, raw/applied mouse deltas, keys/buttons, player feet/eye position, velocity/acceleration/grounded state, AABB, camera yaw/pitch/basis/matrices, world/chunk/block edits, ray origin/direction/hit/previous/face normal, mesh bounds/counts, adapter, WARP, feature level, pipeline/resource state, GPU validation, DRED and device removal status.
+State and trace metadata include frame/timing, pointer lock and cursor center, raw/applied mouse deltas, keys/buttons, player feet/eye position, velocity/acceleration/grounded state, AABB, camera yaw/pitch/basis/matrices, world/chunk/block edits, ray origin/direction/hit/previous/face normal, selection outline, mesh bounds/counts, adapter, WARP, feature level, pipeline/resource state, GPU timestamp/frame time, explicit GPU utilization source, GPU validation, DRED and device removal status.
 
 ## Reproducing a camera/raycast issue
 
@@ -45,12 +45,14 @@ State and trace metadata include frame/timing, pointer lock and cursor center, r
 ## GPU tools
 
 RenderDoc can capture a D3D12 frame for pipeline, vertex/index and shader inspection; use its official [Quick Start](https://github.com/baldurk/renderdoc/blob/v1.x/docs/getting_started/quick_start.rst). PIX on Windows can capture Direct3D 12 API calls and timing data; see [PIX GPU Captures](https://devblogs.microsoft.com/pix/gpu-captures/) and [PIX Timing Captures](https://learn.microsoft.com/en-us/windows/win32/direct3dtools/pix/articles/timing-captures/pix-timing-captures).
+
+`scripts/profile_tools.ps1` detects WPR/WPA/PIX and records a WPR capture when WPR is present. DirectCraft never fabricates GPU utilization; import measured profiler data with `scripts/import_gpu_report.ps1`.
 ## World and performance diagnostics
 
 State snapshots now include the player ChunkCoord, load/render radii, loaded/visible/meshed chunk counts and distance/frustum culling counts. Raycast coordinates are world coordinates and use DDA, so the previous cell and hit normal can be inspected at chunk boundaries.
 
 For a headless reproducible run:
 
-    build/debug/Debug/DirectCraft.exe --benchmark --seed 12345 --frames 600 --output performance/benchmark-v1.1.1.json
+    build/debug/Debug/DirectCraft.exe --benchmark --seed 12345 --frames 600 --output performance/benchmark-v1.1.2.json
 
 The adjacent CSV is suitable for plotting p50/p95/p99 frame time. Use Visual Studio Profiler for CPU samples, WPR/WPA for scheduling and ETW, PIX for D3D12 GPU/timing captures, RenderDoc for pipeline inspection and Tracy for optional live zones. See PERFORMANCE.md for the capture checklist.

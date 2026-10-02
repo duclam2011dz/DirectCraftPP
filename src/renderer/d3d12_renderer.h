@@ -6,6 +6,7 @@
 #include <DirectXMath.h>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 namespace directcraft::renderer {
 class D3D12Renderer {
@@ -15,6 +16,8 @@ public:
     D3D12Renderer(const D3D12Renderer&) = delete;
     D3D12Renderer& operator=(const D3D12Renderer&) = delete;
     void setMesh(const voxel::Mesh& mesh);
+    void setSelectionOutline(const voxel::Int3* block);
+    void setDevToolsOverlay(bool enabled, const std::vector<std::string>& lines);
     void setWireframe(bool enabled);
     bool wireframe() const { return wireframe_; }
     std::string adapterName() const;
@@ -27,11 +30,13 @@ public:
     HRESULT deviceRemovedReason() const { return device_ ? device_->GetDeviceRemovedReason() : E_FAIL; }
     UINT64 vertexBytes() const { return vertexBytes_; }
     UINT64 indexBytes() const { return indexBytes_; }
+    bool gpuTimestampAvailable() const { return gpuTimestampAvailable_; }
+    double gpuFrameMs() const { return gpuFrameMs_; }
     void render(const DirectX::XMMATRIX& viewProjection, const std::filesystem::path& screenshotPath = {});
 private:
     struct CameraConstants { DirectX::XMFLOAT4X4 viewProjection; DirectX::XMFLOAT3 cameraPosition; float padding{}; };
-    void createDevice(bool renderTest); void createSwapchain(HWND window); void createTargets(); void createPipeline();
-    void uploadMesh(const voxel::Mesh& mesh); void waitForGpu(); void captureBackBuffer(const std::filesystem::path& path);
+    void createDevice(bool renderTest); void createSwapchain(HWND window); void createTargets(); void createPipeline(); void createQueries();
+    void uploadMesh(const voxel::Mesh& mesh); void uploadOutline(const std::vector<voxel::Vertex>& vertices); void uploadOverlay(const std::vector<voxel::Vertex>& vertices); void waitForGpu(); void captureBackBuffer(const std::filesystem::path& path);
     void writePng(const std::filesystem::path& path, const void* pixels, UINT rowPitch);
     static Microsoft::WRL::ComPtr<ID3DBlob> compileShader(const std::filesystem::path& path, const char* entry, const char* profile);
     static constexpr UINT FrameCount = 2;
@@ -41,7 +46,8 @@ private:
     Microsoft::WRL::ComPtr<ID3D12CommandQueue> commandQueue_; Microsoft::WRL::ComPtr<IDXGISwapChain3> swapchain_; Microsoft::WRL::ComPtr<ID3D12CommandAllocator> commandAllocator_; Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList_; Microsoft::WRL::ComPtr<ID3D12Fence> fence_;
     HANDLE fenceEvent_{}; UINT64 fenceValue_{};
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtvHeap_; Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> dsvHeap_; Microsoft::WRL::ComPtr<ID3D12Resource> renderTargets_[FrameCount]; Microsoft::WRL::ComPtr<ID3D12Resource> depthBuffer_; UINT rtvDescriptorSize_{};
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature_; Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState_; Microsoft::WRL::ComPtr<ID3D12Resource> constantBuffer_; CameraConstants* mappedConstants_{};
-    Microsoft::WRL::ComPtr<ID3D12Resource> vertexBuffer_; Microsoft::WRL::ComPtr<ID3D12Resource> indexBuffer_; D3D12_VERTEX_BUFFER_VIEW vertexView_{}; D3D12_INDEX_BUFFER_VIEW indexView_{}; UINT indexCount_{};
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature_; Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState_; Microsoft::WRL::ComPtr<ID3D12PipelineState> outlinePipelineState_; Microsoft::WRL::ComPtr<ID3D12PipelineState> overlayPipelineState_; Microsoft::WRL::ComPtr<ID3D12Resource> constantBuffer_; CameraConstants* mappedConstants_{};
+    Microsoft::WRL::ComPtr<ID3D12Resource> vertexBuffer_; Microsoft::WRL::ComPtr<ID3D12Resource> indexBuffer_; Microsoft::WRL::ComPtr<ID3D12Resource> outlineBuffer_; Microsoft::WRL::ComPtr<ID3D12Resource> overlayBuffer_; D3D12_VERTEX_BUFFER_VIEW vertexView_{}; D3D12_INDEX_BUFFER_VIEW indexView_{}; D3D12_VERTEX_BUFFER_VIEW outlineView_{}; D3D12_VERTEX_BUFFER_VIEW overlayView_{}; UINT indexCount_{}; UINT outlineVertexCount_{}; UINT overlayVertexCount_{};
+    Microsoft::WRL::ComPtr<ID3D12QueryHeap> timestampHeap_; Microsoft::WRL::ComPtr<ID3D12Resource> timestampReadback_; UINT64 timestampFrequency_{}; bool gpuTimestampAvailable_{}; double gpuFrameMs_{};
 };
 } // namespace directcraft::renderer

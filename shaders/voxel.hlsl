@@ -26,6 +26,7 @@ PixelInput VSMain(VertexInput input) {
 }
 
 float4 PSMain(PixelInput input) : SV_TARGET {
+    if (input.color.a < 0.0) return float4(0.0, 0.0, 0.0, 1.0);
     float3 lightDirection = normalize(float3(-0.45, 0.9, -0.35));
     float diffuse = saturate(dot(normalize(input.normal), lightDirection));
     float lighting = 0.32 + diffuse * 0.68;

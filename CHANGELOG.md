@@ -2,6 +2,20 @@
 
 All notable changes to DirectCraft++ are documented here.
 
+## [1.1.2] - 2026-10-02
+
+### Added
+
+- Sky-blue clear color and deterministic golden screenshot update.
+- D3D12 selection outline around the current voxel DDA hit.
+- Native F3 DevTools overlay with renderer, GPU timestamp, world, player, camera and raycast diagnostics.
+- D3D12 timestamp-query reporting and optional WPR/WPA/PIX profiling scripts/workflow.
+
+### Diagnostics
+
+- State JSON reports selection outline, GPU timestamp/frame time and explicit GPU-utilization source.
+- GPU utilization remains unavailable unless measured profiler data is imported; frame time is never used as a substitute.
+
 ## [1.1.1] - 2026-09-30
 
 ### Fixed
