@@ -1,6 +1,6 @@
 # DirectCraft++
 
-DirectCraft++ is a small Windows-native voxel renderer and gameplay vertical slice. Version `1.1.2` uses C++17, Win32, DirectX 12, CMake and CTest.
+DirectCraft++ is a small Windows-native voxel renderer and gameplay vertical slice. Version `1.1.5` uses C++17, Win32, DirectX 12, CMake and CTest.
 
 ## Features
 
@@ -10,6 +10,8 @@ DirectCraft++ is a small Windows-native voxel renderer and gameplay vertical sli
 - FPS controls: WASD, Raw Input mouse look, Space to jump, LMB to break, RMB to place, and ESC to release the pointer lock.
 - AABB player collision with gravity, acceleration, friction, ground and ceiling contacts.
 - WARP-backed render-test mode for a repeatable BMP smoke frame.
+- Euclidean circular render distance selectable with `--render-distance 8` or `--render-distance 16`; the resident radius is always render distance + 1.
+- Bounded prioritized worker pool for generation and meshing, per-chunk state/cache lifecycle, LOD tiers, AO values, packed vertices and a procedural 16×16 texture atlas.
 - Optional Named Pipe JSONL automation, PNG capture, JSON metadata and per-frame JSONL traces.
 
 ## Requirements
@@ -67,11 +69,12 @@ When launched with `--debug-tools`, F3 opens the native D3D12 DevTools overlay, 
 
 ## Infinite world and benchmark
 
-Terrain uses an integer-only periodic stepped pattern, so equal seeds and world coordinates always produce equal blocks. Chunk edits are session-only. The binary-mask greedy mesher merges equal coplanar runs and reports the selected SSE2/AVX2 backend.
+Terrain uses an integer-only periodic stepped pattern, so equal seeds and world coordinates always produce equal blocks. Chunk edits are session-only. The binary-mask greedy mesher merges equal coplanar runs and reports the selected SSE2/AVX2 backend. Rotating the camera does not unload resident chunks: all chunks in the circular render radius are prepared independently of the frustum, while only visible cached meshes are submitted. An edit increments dirty epochs only for the edited chunk and its border neighbors.
 
 Run a deterministic headless benchmark with JSON and CSV output:
 
-    build/debug/Debug/DirectCraft.exe --benchmark --seed 12345 --frames 600 --output performance/benchmark-v1.1.2.json
+    build/debug/Debug/DirectCraft.exe --benchmark --render-distance 8 --seed 12345 --frames 600 --output performance/benchmark-v1.1.5-r8.json
+    build/debug/Debug/DirectCraft.exe --benchmark --render-distance 16 --seed 12345 --frames 600 --output performance/benchmark-v1.1.5-r16.json
 
 See PERFORMANCE.md for version baselines and Visual Studio Profiler, WPA, PIX, RenderDoc and Tracy workflows.
 

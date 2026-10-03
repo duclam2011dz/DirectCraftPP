@@ -2,6 +2,20 @@
 
 All notable changes to DirectCraft++ are documented here.
 
+## [1.1.5] - 2026-10-03
+
+### Added
+
+- Circular render-distance modes 8/16 with resident radius 9/17 and camera-independent pre-meshing.
+- Bounded prioritized worker queue, chunk lifecycle states and a 64-entry CPU chunk cache.
+- Per-chunk dirty mesh epochs so block edits remesh only the edited chunk and border neighbors.
+- Procedural seeded 16×16-per-material atlas uploaded once to the D3D12 renderer, plus AO and packed vertex diagnostics.
+
+### Fixed
+
+- Turning the camera no longer waits for previously unseen rear chunks to become visible before their meshes are prepared.
+- Smoke rendering uses a stable synchronous center chunk and the packed scene pipeline, preventing worker timing from producing a sky-only golden frame.
+
 ## [1.1.2] - 2026-10-02
 
 ### Added

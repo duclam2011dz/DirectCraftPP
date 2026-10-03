@@ -56,3 +56,17 @@ For a headless reproducible run:
     build/debug/Debug/DirectCraft.exe --benchmark --seed 12345 --frames 600 --output performance/benchmark-v1.1.2.json
 
 The adjacent CSV is suitable for plotting p50/p95/p99 frame time. Use Visual Studio Profiler for CPU samples, WPR/WPA for scheduling and ETW, PIX for D3D12 GPU/timing captures, RenderDoc for pipeline inspection and Tracy for optional live zones. See PERFORMANCE.md for the capture checklist.
+# Debugging v1.1.5
+
+Use `--render-distance 8` or `--render-distance 16` to compare circular streaming modes. F3 shows resident/visible chunks, LOD counts, queue/cache counters, packed bytes, AO vertices and atlas size. A camera turn should change frustum-visible geometry without causing old resident chunks to be regenerated.
+
+The state JSON now includes `streaming.renderDistance`, `streaming.residentRadius`, `streaming.renderShape`, cache counters and mesh packed/unpacked byte counts. After a break/place operation, inspect the trace: only the edited chunk and adjacent border chunks should receive a new mesh epoch.
+
+Benchmark both modes separately:
+
+```powershell
+DirectCraft.exe --benchmark --render-distance 8 --seed 12345 --frames 600 --output performance/benchmark-v1.1.5-r8.json
+DirectCraft.exe --benchmark --render-distance 16 --seed 12345 --frames 600 --output performance/benchmark-v1.1.5-r16.json
+```
+
+GPU utilization remains unavailable unless supplied by PIX/WPA; GPU timestamp duration is not a utilization percentage.

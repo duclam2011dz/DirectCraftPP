@@ -34,3 +34,14 @@ Each frame applies distance culling, optional frustum AABB culling and face cull
 Ray interaction uses Amanatides-Woo DDA across resident chunks and returns world block, previous cell, face normal and hit distance. This removes the stepping error that made break/place unreliable at chunk boundaries.
 
 --benchmark runs the deterministic headless measurement path and exports JSON/CSV. External Visual Studio Profiler, WPA, PIX, RenderDoc and Tracy workflows are documented in PERFORMANCE.md; they are optional and no third-party binaries are committed.
+# DirectCraft++ Architecture
+
+## v1.1.5 streaming pipeline
+
+The world uses an Euclidean circle in chunk coordinates. Render distance is 8 by default or 16 from the command line; the resident radius is always one chunk larger. Distance selection never depends on camera yaw. Generation jobs are submitted to a bounded priority queue and immutable chunk snapshots are meshed by worker threads. The main thread commits results, uploads GPU resources and submits visible cached meshes.
+
+Frustum culling happens only when assembling the draw mesh. It does not prevent a resident chunk from being pre-meshed, so turning the camera does not create a directional streaming stall. Chunks leaving the resident circle move through `Inactive -> Cache`; an LRU retains up to 64 CPU chunks before eviction.
+
+Block edits increment a mesh epoch for the edited chunk and its four horizontal neighbors. A worker result is committed only when its coordinate epoch still matches. This makes edits local while preserving border-face correctness.
+
+The CPU mesh contains AO values and a packed representation. The renderer uploads packed vertices and samples a deterministic procedural 16x16-per-material atlas generated from a dedicated texture seed. The atlas is uploaded once per renderer initialization.

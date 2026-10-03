@@ -71,3 +71,30 @@ Run `powershell -ExecutionPolicy Bypass -File scripts/profile_tools.ps1` for a W
 ## Interpretation
 
 Compare p50/p95/p99 frame time separately from first-load time. A spike during a chunk transition indicates generation/meshing/upload pressure; stable CPU time with high GPU time indicates rasterization or overdraw. Culling counters and mesh triangle counts should accompany every result.
+# Performance notes
+
+## v1.1.5 measurement contract
+
+Release benchmarks are recorded separately for render distance 8 and 16. Each JSON report contains frame p50/p95/p99/max, streaming/generation/meshing averages, job latency, resident/visible/culling counts, LOD counts, AO vertices, packed/unpacked vertex bytes, atlas bytes and cache hit/miss/eviction counters. WARP is correctness-only and must not be compared with hardware FPS.
+
+The renderer exposes GPU timestamp frame duration when supported. `gpuUtilizationPercent` remains `-1` with source `PIX/WPA export required` until an external profiler export provides a valid counter; no utilization value is inferred from frame time.
+
+## Local run
+
+```powershell
+DirectCraft.exe --benchmark --render-distance 8 --seed 12345 --frames 600 --output performance/benchmark-v1.1.5-r8.json
+DirectCraft.exe --benchmark --render-distance 16 --seed 12345 --frames 600 --output performance/benchmark-v1.1.5-r16.json
+```
+
+Compare p95/p99 only between identical build, hardware, driver and render-distance settings. The v1.1.5 optimization counters make it possible to distinguish generation, meshing, upload, culling, cache and atlas/vertex bandwidth costs.
+
+## v1.1.5 Release benchmark snapshot
+
+Captured 2026-10-03 on the local Windows Release build (`AVX2` backend). This benchmark is CPU/headless, so GPU timestamp and GPU utilization are unavailable.
+
+| Mode | p50 / p95 / p99 / max ms | CPU process % | generation / meshing ms | loaded / visible chunks | vertices / indices | packed / unpacked bytes |
+|---|---:|---:|---:|---:|---:|---:|
+| 8 chunks | 0.0017 / 0.0234 / 6.4241 / 7.1764 | 7.61 | 0.0061 / 5.1571 | 253 / 162 | 110,608 / 165,912 | 884,864 / 6,194,048 |
+| 16 chunks | 0.0070 / 0.1107 / 23.0922 / 27.4148 | 10.47 | 0.0212 / 20.1626 | 901 / 712 | 321,868 / 482,802 | 2,574,944 / 18,024,608 |
+
+Additional recorded values: atlas is 8,192 bytes (4×2 tiles, 16×16 each); render distance 8 had 72 Full and 90 Simplified chunks, while 16 had 72 Full, 182 Simplified and 458 FarTerrain chunks. The 16-chunk p99 is the current bottleneck signal for meshing/large visible mesh assembly and should be treated as a future optimization target, not hidden by averaging.

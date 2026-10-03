@@ -16,6 +16,7 @@ public:
     D3D12Renderer(const D3D12Renderer&) = delete;
     D3D12Renderer& operator=(const D3D12Renderer&) = delete;
     void setMesh(const voxel::Mesh& mesh);
+    void setTextureAtlas(const voxel::TextureAtlas& atlas);
     void setSelectionOutline(const voxel::Int3* block);
     void setDevToolsOverlay(bool enabled, const std::vector<std::string>& lines);
     void setWireframe(bool enabled);
@@ -23,8 +24,8 @@ public:
     std::string adapterName() const;
     bool usingWarp() const { return usingWarp_; }
     std::string featureLevel() const { return "11_0"; }
-    bool pipelineReady() const { return pipelineState_ != nullptr && rootSignature_ != nullptr; }
-    bool resourcesReady() const { return vertexBuffer_ != nullptr && indexBuffer_ != nullptr && depthBuffer_ != nullptr; }
+    bool pipelineReady() const { return pipelineState_ != nullptr && packedPipelineState_ != nullptr && rootSignature_ != nullptr; }
+    bool resourcesReady() const { return (packedVertexBuffer_ != nullptr || vertexBuffer_ != nullptr) && indexBuffer_ != nullptr && depthBuffer_ != nullptr; }
     bool gpuValidationEnabled() const { return gpuValidationEnabled_; }
     bool dredEnabled() const { return dredEnabled_; }
     HRESULT deviceRemovedReason() const { return device_ ? device_->GetDeviceRemovedReason() : E_FAIL; }
@@ -46,8 +47,8 @@ private:
     Microsoft::WRL::ComPtr<ID3D12CommandQueue> commandQueue_; Microsoft::WRL::ComPtr<IDXGISwapChain3> swapchain_; Microsoft::WRL::ComPtr<ID3D12CommandAllocator> commandAllocator_; Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList_; Microsoft::WRL::ComPtr<ID3D12Fence> fence_;
     HANDLE fenceEvent_{}; UINT64 fenceValue_{};
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtvHeap_; Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> dsvHeap_; Microsoft::WRL::ComPtr<ID3D12Resource> renderTargets_[FrameCount]; Microsoft::WRL::ComPtr<ID3D12Resource> depthBuffer_; UINT rtvDescriptorSize_{};
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature_; Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState_; Microsoft::WRL::ComPtr<ID3D12PipelineState> outlinePipelineState_; Microsoft::WRL::ComPtr<ID3D12PipelineState> overlayPipelineState_; Microsoft::WRL::ComPtr<ID3D12Resource> constantBuffer_; CameraConstants* mappedConstants_{};
-    Microsoft::WRL::ComPtr<ID3D12Resource> vertexBuffer_; Microsoft::WRL::ComPtr<ID3D12Resource> indexBuffer_; Microsoft::WRL::ComPtr<ID3D12Resource> outlineBuffer_; Microsoft::WRL::ComPtr<ID3D12Resource> overlayBuffer_; D3D12_VERTEX_BUFFER_VIEW vertexView_{}; D3D12_INDEX_BUFFER_VIEW indexView_{}; D3D12_VERTEX_BUFFER_VIEW outlineView_{}; D3D12_VERTEX_BUFFER_VIEW overlayView_{}; UINT indexCount_{}; UINT outlineVertexCount_{}; UINT overlayVertexCount_{};
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature_; Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState_; Microsoft::WRL::ComPtr<ID3D12PipelineState> packedPipelineState_; Microsoft::WRL::ComPtr<ID3D12PipelineState> outlinePipelineState_; Microsoft::WRL::ComPtr<ID3D12PipelineState> overlayPipelineState_; Microsoft::WRL::ComPtr<ID3D12Resource> constantBuffer_; CameraConstants* mappedConstants_{}; Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> textureHeap_; Microsoft::WRL::ComPtr<ID3D12Resource> textureAtlas_; Microsoft::WRL::ComPtr<ID3D12Resource> textureUpload_; D3D12_GPU_DESCRIPTOR_HANDLE textureHandle_{};
+    Microsoft::WRL::ComPtr<ID3D12Resource> vertexBuffer_; Microsoft::WRL::ComPtr<ID3D12Resource> packedVertexBuffer_; Microsoft::WRL::ComPtr<ID3D12Resource> indexBuffer_; Microsoft::WRL::ComPtr<ID3D12Resource> outlineBuffer_; Microsoft::WRL::ComPtr<ID3D12Resource> overlayBuffer_; D3D12_VERTEX_BUFFER_VIEW vertexView_{}; D3D12_VERTEX_BUFFER_VIEW packedVertexView_{}; D3D12_INDEX_BUFFER_VIEW indexView_{}; D3D12_VERTEX_BUFFER_VIEW outlineView_{}; D3D12_VERTEX_BUFFER_VIEW overlayView_{}; UINT indexCount_{}; UINT outlineVertexCount_{}; UINT overlayVertexCount_{};
     Microsoft::WRL::ComPtr<ID3D12QueryHeap> timestampHeap_; Microsoft::WRL::ComPtr<ID3D12Resource> timestampReadback_; UINT64 timestampFrequency_{}; bool gpuTimestampAvailable_{}; double gpuFrameMs_{};
 };
 } // namespace directcraft::renderer

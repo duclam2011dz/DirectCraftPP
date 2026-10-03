@@ -12,7 +12,7 @@ Win32Window::Win32Window(HINSTANCE instance, int width, int height, bool visible
     windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW); windowClass.style = CS_HREDRAW | CS_VREDRAW;
     RegisterClassExW(&windowClass);
     RECT rectangle{0, 0, width, height}; AdjustWindowRect(&rectangle, WS_OVERLAPPEDWINDOW, FALSE);
-    window_ = CreateWindowExW(0, WindowClassName, L"DirectCraft++ v1.1.2", WS_OVERLAPPEDWINDOW,
+    window_ = CreateWindowExW(0, WindowClassName, L"DirectCraft++ v1.1.5", WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT, rectangle.right - rectangle.left, rectangle.bottom - rectangle.top,
         nullptr, nullptr, instance_, this);
     if (!window_) throw std::runtime_error("Could not create the DirectCraft Win32 window.");
